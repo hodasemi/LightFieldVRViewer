@@ -1,5 +1,5 @@
 [package]
-name = "LightFieldVRViewer"
+name = "light_field_vr_viewer"
 version = "0.1.0"
 authors = ["hodasemi <michaelh.95@t-online.de>"]
 edition = "2018"
