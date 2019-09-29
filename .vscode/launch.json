@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug VR Viewer",
+            "cargo": {
+                "args": [
+                    "build"
+                ],
+                "filter": {
+                    "name": "light_field_vr_viewer",
+                    "kind": "bin"
+                }
+            },
+            "linux": {
+                "env": {
+                    "RUST_BACKTRACE": "1"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceRoot}"
+        }
+    ]
+}
