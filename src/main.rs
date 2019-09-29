@@ -4,7 +4,7 @@ fn main() -> VerboseResult<()> {
     let context = Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
             debugging: true,
-            renderdoc: true,
+            renderdoc: false,
             steam_layer: false,
             use_util: false,
             verbose: false,
