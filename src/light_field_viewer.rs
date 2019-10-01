@@ -4,6 +4,8 @@ use std::mem;
 use std::slice;
 use std::sync::Arc;
 
+use cgmath::{vec3, Matrix4, Point3};
+
 use super::example_object::ExampleVertex;
 
 pub struct LightFieldViewer {
@@ -16,6 +18,9 @@ pub struct LightFieldViewer {
     example_texture: Arc<Image>,
     example_descriptor: TargetMode<Arc<DescriptorSet>>,
     example_buffer: Arc<Buffer<ExampleVertex>>,
+
+    // simulate vr transform for normal rendering
+    simulation_transform: VRTransformations,
 }
 
 impl LightFieldViewer {
@@ -38,6 +43,20 @@ impl LightFieldViewer {
             &example_descriptor,
         )?;
 
+        let simulation_transform = VRTransformations {
+            proj: perspective(
+                45.0,
+                context.render_core().width() as f32 / context.render_core().height() as f32,
+                0.01,
+                100.0,
+            ),
+            view: Matrix4::look_at(
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                vec3(0.0, 0.0, 1.0),
+            ),
+        };
+
         Ok(Arc::new(LightFieldViewer {
             render_targets,
 
@@ -48,6 +67,8 @@ impl LightFieldViewer {
             example_texture,
             example_descriptor,
             example_buffer: Self::create_example_buffer(context)?,
+
+            simulation_transform,
         }))
     }
 }
@@ -81,42 +102,74 @@ impl TScene for LightFieldViewer {
         indices: &TargetMode<usize>,
         transforms: &Option<TargetMode<VRTransformations>>,
     ) -> VerboseResult<()> {
-        let (left_transform, right_transform) = transforms
-            .as_ref()
-            .ok_or("no transforms present")?
-            .stereo()?;
-        let (left_index, right_index) = indices.stereo()?;
-        let (left_view_buffer, right_view_buffer) = self.view_buffers.stereo()?;
-        let (left_descriptor, right_descriptor) = self.example_descriptor.stereo()?;
-        let (left_pipeline, right_pipeline) = self.pipelines.stereo()?;
-        let (left_render_target, right_render_target) = self.render_targets.stereo()?;
+        match (
+            indices,
+            &self.view_buffers,
+            &self.example_descriptor,
+            &self.pipelines,
+            &self.render_targets,
+        ) {
+            (
+                TargetMode::Single(index),
+                TargetMode::Single(view_buffer),
+                TargetMode::Single(example_descriptor),
+                TargetMode::Single(pipeline),
+                TargetMode::Single(render_target),
+            ) => {
+                Self::render(
+                    *index,
+                    render_target,
+                    pipeline,
+                    command_buffer,
+                    view_buffer,
+                    &self.simulation_transform,
+                    example_descriptor,
+                    &self.example_buffer,
+                )?;
+            }
+            (
+                TargetMode::Stereo(left_index, right_index),
+                TargetMode::Stereo(left_view_buffer, right_view_buffer),
+                TargetMode::Stereo(left_descriptor, right_descriptor),
+                TargetMode::Stereo(left_pipeline, right_pipeline),
+                TargetMode::Stereo(left_render_target, right_render_target),
+            ) => {
+                let (left_transform, right_transform) = transforms
+                    .as_ref()
+                    .ok_or("no transforms present")?
+                    .stereo()?;
 
-        Self::render(
-            *left_index,
-            left_render_target,
-            left_pipeline,
-            command_buffer,
-            left_view_buffer,
-            left_transform,
-            left_descriptor,
-            &self.example_buffer,
-        )?;
+                Self::render(
+                    *left_index,
+                    left_render_target,
+                    left_pipeline,
+                    command_buffer,
+                    left_view_buffer,
+                    left_transform,
+                    left_descriptor,
+                    &self.example_buffer,
+                )?;
 
-        Self::render(
-            *right_index,
-            right_render_target,
-            right_pipeline,
-            command_buffer,
-            right_view_buffer,
-            right_transform,
-            right_descriptor,
-            &self.example_buffer,
-        )?;
+                Self::render(
+                    *right_index,
+                    right_render_target,
+                    right_pipeline,
+                    command_buffer,
+                    right_view_buffer,
+                    right_transform,
+                    right_descriptor,
+                    &self.example_buffer,
+                )?;
+            }
+            _ => create_error!("invalid target mode setup"),
+        }
 
         Ok(())
     }
 
     fn resize(&self) -> VerboseResult<()> {
+        println!("resize not implemented!");
+
         Ok(())
     }
 }
@@ -143,11 +196,11 @@ impl LightFieldViewer {
         command_buffer.bind_pipeline(pipeline)?;
         command_buffer.bind_descriptor_sets_minimal(&[descriptor_set])?;
         command_buffer.bind_vertex_buffer(vertex_buffer);
-        command_buffer.draw_complete_single_instance(6);
+        command_buffer.draw_complete_single_instance(vertex_buffer.size() as u32);
 
         render_target.end(command_buffer)?;
 
-        unimplemented!()
+        Ok(())
     }
 
     fn create_pipelines(
@@ -158,8 +211,6 @@ impl LightFieldViewer {
         render_targets: &TargetMode<RenderTarget>,
         descriptors: &TargetMode<impl VkHandle<VkDescriptorSetLayout>>,
     ) -> VerboseResult<TargetMode<Arc<Pipeline>>> {
-        let (left_render_target, right_render_target) = render_targets.stereo()?;
-
         let vertex_shader = ShaderModule::new(context.device().clone(), vs, ShaderType::Vertex)?;
         let fragment_shader =
             ShaderModule::new(context.device().clone(), fs, ShaderType::Fragment)?;
@@ -169,27 +220,48 @@ impl LightFieldViewer {
             fragment_shader.pipeline_stage_info(),
         ];
 
-        let (left_descriptor, _) = descriptors.stereo()?;
-        let pipeline_layout =
-            PipelineLayout::new(context.device().clone(), &[left_descriptor], &[])?;
+        match (render_targets, descriptors) {
+            (TargetMode::Single(render_target), TargetMode::Single(descriptor)) => {
+                let pipeline_layout =
+                    PipelineLayout::new(context.device().clone(), &[descriptor], &[])?;
 
-        let left_pipeline = Self::create_pipeline(
-            context,
-            &stages,
-            sample_count,
-            left_render_target.render_pass(),
-            &pipeline_layout,
-        )?;
+                let pipeline = Self::create_pipeline(
+                    context,
+                    &stages,
+                    sample_count,
+                    render_target.render_pass(),
+                    &pipeline_layout,
+                )?;
 
-        let right_pipeline = Self::create_pipeline(
-            context,
-            &stages,
-            sample_count,
-            right_render_target.render_pass(),
-            &pipeline_layout,
-        )?;
+                Ok(TargetMode::Single(pipeline))
+            }
+            (
+                TargetMode::Stereo(left_render_target, right_render_target),
+                TargetMode::Stereo(left_descriptor, _),
+            ) => {
+                let pipeline_layout =
+                    PipelineLayout::new(context.device().clone(), &[left_descriptor], &[])?;
 
-        Ok(TargetMode::Stereo(left_pipeline, right_pipeline))
+                let left_pipeline = Self::create_pipeline(
+                    context,
+                    &stages,
+                    sample_count,
+                    left_render_target.render_pass(),
+                    &pipeline_layout,
+                )?;
+
+                let right_pipeline = Self::create_pipeline(
+                    context,
+                    &stages,
+                    sample_count,
+                    right_render_target.render_pass(),
+                    &pipeline_layout,
+                )?;
+
+                Ok(TargetMode::Stereo(left_pipeline, right_pipeline))
+            }
+            _ => create_error!("invalid target mode setup"),
+        }
     }
 
     fn create_pipeline(
@@ -270,7 +342,7 @@ impl LightFieldViewer {
             false,
             false,
             VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_BACK_BIT,
+            VK_CULL_MODE_NONE,
             VK_FRONT_FACE_COUNTER_CLOCKWISE,
             false,
             0.0,
@@ -369,18 +441,29 @@ impl LightFieldViewer {
     fn create_view_buffers(
         context: &Arc<Context>,
     ) -> VerboseResult<TargetMode<Arc<Buffer<VRTransformations>>>> {
-        Ok(TargetMode::Stereo(
-            Buffer::new()
-                .set_usage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-                .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-                .set_size(1)
-                .build(context.device().clone())?,
-            Buffer::new()
-                .set_usage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-                .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-                .set_size(1)
-                .build(context.device().clone())?,
-        ))
+        let render_core = context.render_core();
+
+        match render_core.images() {
+            TargetMode::Single(_) => Ok(TargetMode::Single(
+                Buffer::new()
+                    .set_usage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+                    .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                    .set_size(1)
+                    .build(context.device().clone())?,
+            )),
+            TargetMode::Stereo(_, _) => Ok(TargetMode::Stereo(
+                Buffer::new()
+                    .set_usage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+                    .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                    .set_size(1)
+                    .build(context.device().clone())?,
+                Buffer::new()
+                    .set_usage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+                    .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                    .set_size(1)
+                    .build(context.device().clone())?,
+            )),
+        }
     }
 
     fn create_example_texture(
@@ -388,8 +471,6 @@ impl LightFieldViewer {
         path: &str,
         view_buffers: &TargetMode<Arc<Buffer<VRTransformations>>>,
     ) -> VerboseResult<(Arc<Image>, TargetMode<Arc<DescriptorSet>>)> {
-        let (left_view_buffer, right_view_buffer) = view_buffers.stereo()?;
-
         let image = Image::file_source(path)
             .pretty_sampler()
             .build(context.device(), context.queue())?;
@@ -409,19 +490,36 @@ impl LightFieldViewer {
             )
             .build(context.device().clone())?;
 
-        let left_descriptor = Self::create_descriptor_set(context.device(), &descriptor_layout)?;
-        let right_descriptor = Self::create_descriptor_set(context.device(), &descriptor_layout)?;
+        match view_buffers {
+            TargetMode::Single(view_buffer) => {
+                let descriptor_set =
+                    Self::create_descriptor_set(context.device(), &descriptor_layout)?;
 
-        left_descriptor.update(&[
-            DescriptorWrite::combined_samplers(0, &[&image]),
-            DescriptorWrite::uniform_buffers(1, &[left_view_buffer]),
-        ]);
-        right_descriptor.update(&[
-            DescriptorWrite::combined_samplers(0, &[&image]),
-            DescriptorWrite::uniform_buffers(1, &[right_view_buffer]),
-        ]);
+                descriptor_set.update(&[
+                    DescriptorWrite::combined_samplers(0, &[&image]),
+                    DescriptorWrite::uniform_buffers(1, &[view_buffer]),
+                ]);
 
-        Ok((image, TargetMode::Stereo(left_descriptor, right_descriptor)))
+                Ok((image, TargetMode::Single(descriptor_set)))
+            }
+            TargetMode::Stereo(left_view_buffer, right_view_buffer) => {
+                let left_descriptor =
+                    Self::create_descriptor_set(context.device(), &descriptor_layout)?;
+                let right_descriptor =
+                    Self::create_descriptor_set(context.device(), &descriptor_layout)?;
+
+                left_descriptor.update(&[
+                    DescriptorWrite::combined_samplers(0, &[&image]),
+                    DescriptorWrite::uniform_buffers(1, &[left_view_buffer]),
+                ]);
+                right_descriptor.update(&[
+                    DescriptorWrite::combined_samplers(0, &[&image]),
+                    DescriptorWrite::uniform_buffers(1, &[right_view_buffer]),
+                ]);
+
+                Ok((image, TargetMode::Stereo(left_descriptor, right_descriptor)))
+            }
+        }
     }
 
     fn create_descriptor_set(
@@ -438,18 +536,31 @@ impl LightFieldViewer {
     fn create_render_targets(context: &Arc<Context>) -> VerboseResult<TargetMode<RenderTarget>> {
         let render_core = context.render_core();
         let images = render_core.images();
-        let (left_images, right_images) = images.stereo()?;
 
-        let left_render_target = RenderTarget::new(render_core.width(), render_core.height())
-            .set_prepared_targets(left_images, 0)
-            .add_target_info(CustomTarget::depth())
-            .build(context.device(), context.queue())?;
+        match images {
+            TargetMode::Single(images) => {
+                let render_target = RenderTarget::new(render_core.width(), render_core.height())
+                    .set_prepared_targets(&images, 0)
+                    .add_target_info(CustomTarget::depth())
+                    .build(context.device(), context.queue())?;
 
-        let right_render_target = RenderTarget::new(render_core.width(), render_core.height())
-            .set_prepared_targets(right_images, 0)
-            .add_target_info(CustomTarget::depth())
-            .build(context.device(), context.queue())?;
+                Ok(TargetMode::Single(render_target))
+            }
+            TargetMode::Stereo(left_images, right_images) => {
+                let left_render_target =
+                    RenderTarget::new(render_core.width(), render_core.height())
+                        .set_prepared_targets(&left_images, 0)
+                        .add_target_info(CustomTarget::depth())
+                        .build(context.device(), context.queue())?;
 
-        Ok(TargetMode::Stereo(left_render_target, right_render_target))
+                let right_render_target =
+                    RenderTarget::new(render_core.width(), render_core.height())
+                        .set_prepared_targets(&right_images, 0)
+                        .add_target_info(CustomTarget::depth())
+                        .build(context.device(), context.queue())?;
+
+                Ok(TargetMode::Stereo(left_render_target, right_render_target))
+            }
+        }
     }
 }
