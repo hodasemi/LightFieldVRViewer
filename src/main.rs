@@ -16,6 +16,7 @@ fn main() -> VerboseResult<()> {
             use_util: false,
             verbose: false,
         })
+        .enable_vsync()
         .set_sample_count(sample_count)
         .set_vr_mode(VRMode::OpenVR)
         // .set_openxr_json("/usr/share/openxr/1/openxr_monado.json")
@@ -24,6 +25,9 @@ fn main() -> VerboseResult<()> {
     let light_field_viewer = LightFieldViewer::new(&context, sample_count)?;
 
     context.set_game_object(Some(light_field_viewer.clone()))?;
+    context
+        .render_core()
+        .add_scene(light_field_viewer.clone())?;
 
     context.run()?;
 
