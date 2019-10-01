@@ -15,7 +15,7 @@ pub struct LightFieldViewer {
 
     view_buffers: TargetMode<Arc<Buffer<VRTransformations>>>,
 
-    example_texture: Arc<Image>,
+    _example_texture: Arc<Image>,
     example_descriptor: TargetMode<Arc<DescriptorSet>>,
     example_buffer: Arc<Buffer<ExampleVertex>>,
 
@@ -64,7 +64,7 @@ impl LightFieldViewer {
 
             view_buffers,
 
-            example_texture,
+            _example_texture: example_texture,
             example_descriptor,
             example_buffer: Self::create_example_buffer(context)?,
 
@@ -116,6 +116,8 @@ impl TScene for LightFieldViewer {
                 TargetMode::Single(pipeline),
                 TargetMode::Single(render_target),
             ) => {
+                // println!("single mode rendering");
+
                 Self::render(
                     *index,
                     render_target,
@@ -134,6 +136,8 @@ impl TScene for LightFieldViewer {
                 TargetMode::Stereo(left_pipeline, right_pipeline),
                 TargetMode::Stereo(left_render_target, right_render_target),
             ) => {
+                // println!("stereo mode rendering");
+
                 let (left_transform, right_transform) = transforms
                     .as_ref()
                     .ok_or("no transforms present")?

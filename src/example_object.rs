@@ -17,4 +17,4 @@ impl ExampleVertex {
     }
 }
 
-pub struct ExampleObject {}
+// pub struct ExampleObject {}

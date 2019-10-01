@@ -31,7 +31,5 @@ fn main() -> VerboseResult<()> {
 
     context.run()?;
 
-    context.set_game_object(None)?;
-
     Ok(())
 }
