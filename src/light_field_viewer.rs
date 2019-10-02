@@ -4,7 +4,7 @@ use std::mem;
 use std::slice;
 use std::sync::Arc;
 
-use cgmath::{vec3, Matrix4, Point3};
+use cgmath::{vec3, vec4, Matrix4, Point3};
 
 use super::example_object::ExampleVertex;
 
@@ -426,13 +426,15 @@ impl LightFieldViewer {
     }
 
     fn create_example_buffer(context: &Arc<Context>) -> VerboseResult<Arc<Buffer<ExampleVertex>>> {
+        let z = 3.0;
+
         let data = [
-            ExampleVertex::new(-1.0, 4.0, 1.0, 0.0, 0.0),
-            ExampleVertex::new(-1.0, 4.0, -1.0, 0.0, 1.0),
-            ExampleVertex::new(1.0, 4.0, -1.0, 1.0, 1.0),
-            ExampleVertex::new(1.0, 4.0, -1.0, 1.0, 1.0),
-            ExampleVertex::new(1.0, 4.0, 1.0, 1.0, 0.0),
-            ExampleVertex::new(-1.0, 4.0, 1.0, 0.0, 0.0),
+            ExampleVertex::new(-1.0, 1.0, z, 0.0, 0.0),
+            ExampleVertex::new(-1.0, -1.0, z, 0.0, 1.0),
+            ExampleVertex::new(1.0, -1.0, z, 1.0, 1.0),
+            ExampleVertex::new(1.0, -1.0, z, 1.0, 1.0),
+            ExampleVertex::new(1.0, 1.0, z, 1.0, 0.0),
+            ExampleVertex::new(-1.0, 1.0, z, 0.0, 0.0),
         ];
 
         Buffer::new()
@@ -544,7 +546,7 @@ impl LightFieldViewer {
         match images {
             TargetMode::Single(images) => {
                 let render_target = RenderTarget::new(render_core.width(), render_core.height())
-                    .set_prepared_targets(&images, 0)
+                    .set_prepared_targets(&images, 0, vec4(0.0, 0.0, 0.0, 1.0))
                     .add_target_info(CustomTarget::depth())
                     .build(context.device(), context.queue())?;
 
@@ -553,13 +555,13 @@ impl LightFieldViewer {
             TargetMode::Stereo(left_images, right_images) => {
                 let left_render_target =
                     RenderTarget::new(render_core.width(), render_core.height())
-                        .set_prepared_targets(&left_images, 0)
+                        .set_prepared_targets(&left_images, 0, vec4(0.2, 0.2, 0.2, 1.0))
                         .add_target_info(CustomTarget::depth())
                         .build(context.device(), context.queue())?;
 
                 let right_render_target =
                     RenderTarget::new(render_core.width(), render_core.height())
-                        .set_prepared_targets(&right_images, 0)
+                        .set_prepared_targets(&right_images, 0, vec4(0.2, 0.2, 0.2, 1.0))
                         .add_target_info(CustomTarget::depth())
                         .build(context.device(), context.queue())?;
 
