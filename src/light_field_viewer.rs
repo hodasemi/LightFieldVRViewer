@@ -82,15 +82,7 @@ impl GameObject for LightFieldViewer {
         Ok(())
     }
 
-    fn on_key_down(&self, _input: InputMap) -> VerboseResult<()> {
-        Ok(())
-    }
-
-    fn on_key_up(&self, _input: InputMap) -> VerboseResult<()> {
-        Ok(())
-    }
-
-    fn on_axis(&self, _axis: ControllerAxis) -> VerboseResult<()> {
+    fn event(&self, _event: Event) -> VerboseResult<()> {
         Ok(())
     }
 }
