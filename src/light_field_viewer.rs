@@ -74,6 +74,10 @@ impl LightFieldViewer {
 }
 
 impl GameObject for LightFieldViewer {
+    fn name(&self) -> &str {
+        "LightFieldViewer"
+    }
+
     fn update(&self) -> VerboseResult<()> {
         Ok(())
     }
