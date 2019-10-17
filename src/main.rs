@@ -1,5 +1,6 @@
 use context::prelude::*;
 
+mod config;
 mod example_object;
 mod light_field_viewer;
 

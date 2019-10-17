@@ -6,9 +6,11 @@ use std::sync::Arc;
 
 use cgmath::{vec3, vec4, Matrix4, Point3};
 
-use super::example_object::ExampleVertex;
+use super::{config::Config, example_object::ExampleVertex};
 
 pub struct LightFieldViewer {
+    config: Config,
+
     render_targets: TargetMode<RenderTarget>,
 
     pipelines: TargetMode<Arc<Pipeline>>,
@@ -28,6 +30,8 @@ impl LightFieldViewer {
         context: &Arc<Context>,
         sample_count: VkSampleCountFlags,
     ) -> VerboseResult<Arc<Self>> {
+        let config = Config::load("TODO")?;
+
         let view_buffers = Self::create_view_buffers(context)?;
 
         let (example_texture, example_descriptor) =
@@ -58,6 +62,8 @@ impl LightFieldViewer {
         };
 
         Ok(Arc::new(LightFieldViewer {
+            config,
+
             render_targets,
 
             pipelines,
