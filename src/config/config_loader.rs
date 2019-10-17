@@ -3,8 +3,8 @@ use context::prelude::*;
 use super::{extrinsic::Extrinsic, intrinsic::Intrinsic, meta::Meta};
 
 const META_TAG: &str = "meta";
-const EXTRINSIC: &str = "extrinsic";
-const INTRINSIC: &str = "intrinsic";
+const EXTRINSIC: &str = "extrinsics";
+const INTRINSIC: &str = "intrinsics";
 
 #[derive(Debug, PartialEq)]
 pub struct Config {
@@ -16,8 +16,6 @@ pub struct Config {
 impl Config {
     pub fn load(path: &str) -> VerboseResult<Config> {
         let config = ConfigHandler::read_config(path)?;
-
-        println!("{:#?}", config);
 
         let intrinsic = Intrinsic::load(
             config
