@@ -4,7 +4,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug VR Viewer",
+            "name": "Launch (Linux)",
             "cargo": {
                 "args": [
                     "build"
@@ -21,6 +21,16 @@
             },
             "args": [],
             "cwd": "${workspaceRoot}"
+        },
+        {
+            "type": "cppvsdbg",
+            "request": "launch",
+            "name": "Launch (Windows)",
+            "program": "${workspaceRoot}/target/debug/light_field_vr_viewer.exe",
+            "stopAtEntry": false,
+            "cwd": "${workspaceRoot}",
+            "environment": [],
+            "externalConsole": true
         }
     ]
 }
