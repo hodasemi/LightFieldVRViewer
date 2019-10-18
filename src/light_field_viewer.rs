@@ -9,7 +9,7 @@ use cgmath::{vec3, vec4, Matrix4, Point3};
 use super::{config::Config, example_object::ExampleVertex};
 
 pub struct LightFieldViewer {
-    config: Config,
+    // config: Config,
 
     render_targets: TargetMode<RenderTarget>,
 
@@ -30,7 +30,7 @@ impl LightFieldViewer {
         context: &Arc<Context>,
         sample_count: VkSampleCountFlags,
     ) -> VerboseResult<Arc<Self>> {
-        let config = Config::load("TODO")?;
+        // let config = Config::load("TODO")?;
 
         let view_buffers = Self::create_view_buffers(context)?;
 
@@ -62,7 +62,7 @@ impl LightFieldViewer {
         };
 
         Ok(Arc::new(LightFieldViewer {
-            config,
+            // config,
 
             render_targets,
 

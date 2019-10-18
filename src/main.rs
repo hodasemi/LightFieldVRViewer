@@ -11,7 +11,7 @@ fn main() -> VerboseResult<()> {
 
     let context = Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
-            debugging: false,
+            debugging: true,
             renderdoc: false,
             steam_layer: false,
             use_util: false,
@@ -26,9 +26,9 @@ fn main() -> VerboseResult<()> {
     let light_field_viewer = LightFieldViewer::new(&context, sample_count)?;
 
     context.set_game_object(Some(light_field_viewer.clone()))?;
-    context
-        .render_core()
-        .add_scene(light_field_viewer.clone())?;
+    // context
+    //     .render_core()
+    //     .add_scene(light_field_viewer.clone())?;
 
     context.run()?;
 
