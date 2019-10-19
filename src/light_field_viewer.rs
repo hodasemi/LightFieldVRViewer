@@ -10,7 +10,6 @@ use super::{config::Config, example_object::ExampleVertex};
 
 pub struct LightFieldViewer {
     // config: Config,
-
     render_targets: TargetMode<RenderTarget>,
 
     pipelines: TargetMode<Arc<Pipeline>>,
@@ -63,7 +62,6 @@ impl LightFieldViewer {
 
         Ok(Arc::new(LightFieldViewer {
             // config,
-
             render_targets,
 
             pipelines,
@@ -348,7 +346,7 @@ impl LightFieldViewer {
             false,
             false,
             VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_NONE,
+            VK_CULL_MODE_BACK_BIT,
             VK_FRONT_FACE_COUNTER_CLOCKWISE,
             false,
             0.0,
@@ -428,7 +426,7 @@ impl LightFieldViewer {
     }
 
     fn create_example_buffer(context: &Arc<Context>) -> VerboseResult<Arc<Buffer<ExampleVertex>>> {
-        let z = 3.0;
+        let z = -3.0;
 
         let data = [
             ExampleVertex::new(-1.0, 1.0, z, 0.0, 0.0),
