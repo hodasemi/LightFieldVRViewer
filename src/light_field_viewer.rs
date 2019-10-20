@@ -6,9 +6,10 @@ use std::sync::Arc;
 
 use cgmath::{vec3, vec4, Matrix4, Point3};
 
-use super::example_object::ExampleVertex;
+use super::{config::Config, example_object::ExampleVertex};
 
 pub struct LightFieldViewer {
+    // config: Config,
     render_targets: TargetMode<RenderTarget>,
 
     pipelines: TargetMode<Arc<Pipeline>>,
@@ -28,6 +29,8 @@ impl LightFieldViewer {
         context: &Arc<Context>,
         sample_count: VkSampleCountFlags,
     ) -> VerboseResult<Arc<Self>> {
+        // let config = Config::load("TODO")?;
+
         let view_buffers = Self::create_view_buffers(context)?;
 
         let (example_texture, example_descriptor) =
@@ -58,6 +61,7 @@ impl LightFieldViewer {
         };
 
         Ok(Arc::new(LightFieldViewer {
+            // config,
             render_targets,
 
             pipelines,
@@ -342,7 +346,7 @@ impl LightFieldViewer {
             false,
             false,
             VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_NONE,
+            VK_CULL_MODE_BACK_BIT,
             VK_FRONT_FACE_COUNTER_CLOCKWISE,
             false,
             0.0,
@@ -422,7 +426,7 @@ impl LightFieldViewer {
     }
 
     fn create_example_buffer(context: &Arc<Context>) -> VerboseResult<Arc<Buffer<ExampleVertex>>> {
-        let z = 3.0;
+        let z = -3.0;
 
         let data = [
             ExampleVertex::new(-1.0, 1.0, z, 0.0, 0.0),
@@ -473,7 +477,7 @@ impl LightFieldViewer {
         path: &str,
         view_buffers: &TargetMode<Arc<Buffer<VRTransformations>>>,
     ) -> VerboseResult<(Arc<Image>, TargetMode<Arc<DescriptorSet>>)> {
-        let image = Image::file_source(path)
+        let image = Image::from_file(path)?
             .pretty_sampler()
             .build(context.device(), context.queue())?;
 
