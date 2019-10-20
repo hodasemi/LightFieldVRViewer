@@ -477,7 +477,7 @@ impl LightFieldViewer {
         path: &str,
         view_buffers: &TargetMode<Arc<Buffer<VRTransformations>>>,
     ) -> VerboseResult<(Arc<Image>, TargetMode<Arc<DescriptorSet>>)> {
-        let image = Image::file_source(path)
+        let image = Image::from_file(path)?
             .pretty_sampler()
             .build(context.device(), context.queue())?;
 
