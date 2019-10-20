@@ -9,21 +9,21 @@ const INTRINSIC: &str = "intrinsics";
 #[derive(Debug, PartialEq)]
 pub struct Config {
     pub meta: Meta,
-    pub intrinsic: Intrinsic,
-    pub extrinsic: Extrinsic,
+    pub intrinsics: Intrinsic,
+    pub extrinsics: Extrinsic,
 }
 
 impl Config {
     pub fn load(path: &str) -> VerboseResult<Config> {
         let config = ConfigHandler::read_config(path)?;
 
-        let intrinsic = Intrinsic::load(
+        let intrinsics = Intrinsic::load(
             config
                 .get(INTRINSIC)
                 .ok_or("intrinsic tag is missing in config")?,
         )?;
 
-        let extrinsic = Extrinsic::load(
+        let extrinsics = Extrinsic::load(
             config
                 .get(EXTRINSIC)
                 .ok_or("extrinsic tag is missing in config")?,
@@ -37,8 +37,8 @@ impl Config {
 
         Ok(Config {
             meta,
-            intrinsic,
-            extrinsic,
+            intrinsics,
+            extrinsics,
         })
     }
 }

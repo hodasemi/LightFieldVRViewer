@@ -6,10 +6,9 @@ use std::sync::Arc;
 
 use cgmath::{vec3, vec4, Matrix4, Point3};
 
-use super::{config::Config, example_object::ExampleVertex};
+use super::example_object::ExampleVertex;
 
 pub struct LightFieldViewer {
-    // config: Config,
     render_targets: TargetMode<RenderTarget>,
 
     pipelines: TargetMode<Arc<Pipeline>>,
@@ -29,8 +28,6 @@ impl LightFieldViewer {
         context: &Arc<Context>,
         sample_count: VkSampleCountFlags,
     ) -> VerboseResult<Arc<Self>> {
-        // let config = Config::load("TODO")?;
-
         let view_buffers = Self::create_view_buffers(context)?;
 
         let (example_texture, example_descriptor) =
@@ -116,8 +113,6 @@ impl TScene for LightFieldViewer {
                 TargetMode::Single(pipeline),
                 TargetMode::Single(render_target),
             ) => {
-                // println!("single mode rendering");
-
                 Self::render(
                     *index,
                     render_target,
@@ -136,8 +131,6 @@ impl TScene for LightFieldViewer {
                 TargetMode::Stereo(left_pipeline, right_pipeline),
                 TargetMode::Stereo(left_render_target, right_render_target),
             ) => {
-                // println!("stereo mode rendering");
-
                 let (left_transform, right_transform) = transforms
                     .as_ref()
                     .ok_or("no transforms present")?
@@ -191,7 +184,6 @@ impl LightFieldViewer {
     ) -> VerboseResult<()> {
         {
             let mut mapped = view_buffer.map_complete()?;
-
             mapped[0] = *transform;
         }
 
