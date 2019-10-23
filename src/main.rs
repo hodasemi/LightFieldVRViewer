@@ -13,7 +13,7 @@ fn main() -> VerboseResult<()> {
 
     let context = Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
-            debugging: true,
+            debugging: false,
             renderdoc: false,
             steam_layer: false,
             use_util: false,
@@ -21,12 +21,13 @@ fn main() -> VerboseResult<()> {
         })
         .enable_vsync()
         .set_sample_count(sample_count)
-        // .set_vr_mode(VRMode::OpenVR)
+        .set_vr_mode(VRMode::OpenVR)
         // .set_openxr_json("/usr/share/openxr/1/openxr_monado.json")
         .build()?;
 
     let light_field = LightField::new(&context, "test_data")?;
-    let light_field_viewer = LightFieldViewer::new(&context, sample_count)?;
+
+    let light_field_viewer = LightFieldViewer::new(&context, sample_count, vec![light_field])?;
 
     context.set_game_object(Some(light_field_viewer.clone()))?;
     context

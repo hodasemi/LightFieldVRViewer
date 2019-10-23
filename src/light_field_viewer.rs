@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use cgmath::{vec3, vec4, Matrix4, Point3};
 
-use super::example_object::ExampleVertex;
+use super::{example_object::ExampleVertex, light_field::LightField};
 
 pub struct LightFieldViewer {
     render_targets: TargetMode<RenderTarget>,
@@ -14,24 +14,29 @@ pub struct LightFieldViewer {
     pipelines: TargetMode<Arc<Pipeline>>,
 
     view_buffers: TargetMode<Arc<Buffer<VRTransformations>>>,
-
-    _example_texture: Arc<Image>,
-    example_descriptor: TargetMode<Arc<DescriptorSet>>,
-    example_buffer: Arc<Buffer<ExampleVertex>>,
+    transform_descriptor: TargetMode<Arc<DescriptorSet>>,
 
     // simulate vr transform for normal rendering
     simulation_transform: VRTransformations,
+
+    light_fields: Vec<LightField>,
 }
 
 impl LightFieldViewer {
     pub fn new(
         context: &Arc<Context>,
         sample_count: VkSampleCountFlags,
+        light_fields: Vec<LightField>,
     ) -> VerboseResult<Arc<Self>> {
         let view_buffers = Self::create_view_buffers(context)?;
 
-        let (example_texture, example_descriptor) =
-            Self::create_example_texture(context, "P1030190.JPG", &view_buffers)?;
+        let transform_descriptor = Self::create_transform_descriptor(context, &view_buffers)?;
+        let light_field_desc_layout = LightField::descriptor_layout(context.device())?;
+
+        let desc = match &transform_descriptor {
+            TargetMode::Single(desc) => desc,
+            TargetMode::Stereo(desc, _) => desc,
+        };
 
         let render_targets = Self::create_render_targets(context)?;
         let pipelines = Self::create_pipelines(
@@ -40,7 +45,7 @@ impl LightFieldViewer {
             "shader/quad.frag.spv",
             sample_count,
             &render_targets,
-            &example_descriptor,
+            &[&light_field_desc_layout, desc],
         )?;
 
         let simulation_transform = VRTransformations {
@@ -64,12 +69,11 @@ impl LightFieldViewer {
             pipelines,
 
             view_buffers,
-
-            _example_texture: example_texture,
-            example_descriptor,
-            example_buffer: Self::create_example_buffer(context)?,
+            transform_descriptor,
 
             simulation_transform,
+
+            light_fields,
         }))
     }
 }
@@ -102,7 +106,7 @@ impl TScene for LightFieldViewer {
         match (
             indices,
             &self.view_buffers,
-            &self.example_descriptor,
+            &self.transform_descriptor,
             &self.pipelines,
             &self.render_targets,
         ) {
@@ -121,7 +125,7 @@ impl TScene for LightFieldViewer {
                     view_buffer,
                     &self.simulation_transform,
                     example_descriptor,
-                    &self.example_buffer,
+                    &self.light_fields,
                 )?;
             }
             (
@@ -144,7 +148,7 @@ impl TScene for LightFieldViewer {
                     left_view_buffer,
                     left_transform,
                     left_descriptor,
-                    &self.example_buffer,
+                    &self.light_fields,
                 )?;
 
                 Self::render(
@@ -155,7 +159,7 @@ impl TScene for LightFieldViewer {
                     right_view_buffer,
                     right_transform,
                     right_descriptor,
-                    &self.example_buffer,
+                    &self.light_fields,
                 )?;
             }
             _ => create_error!("invalid target mode setup"),
@@ -180,7 +184,7 @@ impl LightFieldViewer {
         view_buffer: &Arc<Buffer<VRTransformations>>,
         transform: &VRTransformations,
         descriptor_set: &Arc<DescriptorSet>,
-        vertex_buffer: &Arc<Buffer<ExampleVertex>>,
+        light_fields: &[LightField],
     ) -> VerboseResult<()> {
         {
             let mut mapped = view_buffer.map_complete()?;
@@ -190,9 +194,10 @@ impl LightFieldViewer {
         render_target.begin(command_buffer, VK_SUBPASS_CONTENTS_INLINE, index)?;
 
         command_buffer.bind_pipeline(pipeline)?;
-        command_buffer.bind_descriptor_sets_minimal(&[descriptor_set])?;
-        command_buffer.bind_vertex_buffer(vertex_buffer);
-        command_buffer.draw_complete_single_instance(vertex_buffer.size() as u32);
+
+        for light_field in light_fields {
+            light_field.render(command_buffer, descriptor_set)?;
+        }
 
         render_target.end(command_buffer)?;
 
@@ -205,7 +210,7 @@ impl LightFieldViewer {
         fs: &str,
         sample_count: VkSampleCountFlags,
         render_targets: &TargetMode<RenderTarget>,
-        descriptors: &TargetMode<impl VkHandle<VkDescriptorSetLayout>>,
+        descriptors: &[&dyn VkHandle<VkDescriptorSetLayout>],
     ) -> VerboseResult<TargetMode<Arc<Pipeline>>> {
         let vertex_shader = ShaderModule::new(context.device().clone(), vs, ShaderType::Vertex)?;
         let fragment_shader =
@@ -216,10 +221,10 @@ impl LightFieldViewer {
             fragment_shader.pipeline_stage_info(),
         ];
 
-        match (render_targets, descriptors) {
-            (TargetMode::Single(render_target), TargetMode::Single(descriptor)) => {
+        match render_targets {
+            TargetMode::Single(render_target) => {
                 let pipeline_layout =
-                    PipelineLayout::new(context.device().clone(), &[descriptor], &[])?;
+                    PipelineLayout::new(context.device().clone(), descriptors, &[])?;
 
                 let pipeline = Self::create_pipeline(
                     context,
@@ -231,12 +236,9 @@ impl LightFieldViewer {
 
                 Ok(TargetMode::Single(pipeline))
             }
-            (
-                TargetMode::Stereo(left_render_target, right_render_target),
-                TargetMode::Stereo(left_descriptor, _),
-            ) => {
+            TargetMode::Stereo(left_render_target, right_render_target) => {
                 let pipeline_layout =
-                    PipelineLayout::new(context.device().clone(), &[left_descriptor], &[])?;
+                    PipelineLayout::new(context.device().clone(), descriptors, &[])?;
 
                 let left_pipeline = Self::create_pipeline(
                     context,
@@ -256,7 +258,6 @@ impl LightFieldViewer {
 
                 Ok(TargetMode::Stereo(left_pipeline, right_pipeline))
             }
-            _ => create_error!("invalid target mode setup"),
         }
     }
 
@@ -417,25 +418,6 @@ impl LightFieldViewer {
         Ok(pipeline)
     }
 
-    fn create_example_buffer(context: &Arc<Context>) -> VerboseResult<Arc<Buffer<ExampleVertex>>> {
-        let z = -3.0;
-
-        let data = [
-            ExampleVertex::new(-1.0, 1.0, z, 0.0, 0.0),
-            ExampleVertex::new(-1.0, -1.0, z, 0.0, 1.0),
-            ExampleVertex::new(1.0, -1.0, z, 1.0, 1.0),
-            ExampleVertex::new(1.0, -1.0, z, 1.0, 1.0),
-            ExampleVertex::new(1.0, 1.0, z, 1.0, 0.0),
-            ExampleVertex::new(-1.0, 1.0, z, 0.0, 0.0),
-        ];
-
-        Buffer::new()
-            .set_usage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-            .set_data(&data)
-            .build(context.device().clone())
-    }
-
     fn create_view_buffers(
         context: &Arc<Context>,
     ) -> VerboseResult<TargetMode<Arc<Buffer<VRTransformations>>>> {
@@ -464,24 +446,13 @@ impl LightFieldViewer {
         }
     }
 
-    fn create_example_texture(
+    fn create_transform_descriptor(
         context: &Arc<Context>,
-        path: &str,
         view_buffers: &TargetMode<Arc<Buffer<VRTransformations>>>,
-    ) -> VerboseResult<(Arc<Image>, TargetMode<Arc<DescriptorSet>>)> {
-        let image = Image::from_file(path)?
-            .pretty_sampler()
-            .build(context.device(), context.queue())?;
-
+    ) -> VerboseResult<TargetMode<Arc<DescriptorSet>>> {
         let descriptor_layout = DescriptorSetLayout::new()
             .add_layout_binding(
                 0,
-                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                VK_SHADER_STAGE_FRAGMENT_BIT,
-                0,
-            )
-            .add_layout_binding(
-                1,
                 VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                 VK_SHADER_STAGE_VERTEX_BIT,
                 0,
@@ -493,12 +464,9 @@ impl LightFieldViewer {
                 let descriptor_set =
                     Self::create_descriptor_set(context.device(), &descriptor_layout)?;
 
-                descriptor_set.update(&[
-                    DescriptorWrite::combined_samplers(0, &[&image]),
-                    DescriptorWrite::uniform_buffers(1, &[view_buffer]),
-                ]);
+                descriptor_set.update(&[DescriptorWrite::uniform_buffers(0, &[view_buffer])]);
 
-                Ok((image, TargetMode::Single(descriptor_set)))
+                Ok(TargetMode::Single(descriptor_set))
             }
             TargetMode::Stereo(left_view_buffer, right_view_buffer) => {
                 let left_descriptor =
@@ -506,16 +474,11 @@ impl LightFieldViewer {
                 let right_descriptor =
                     Self::create_descriptor_set(context.device(), &descriptor_layout)?;
 
-                left_descriptor.update(&[
-                    DescriptorWrite::combined_samplers(0, &[&image]),
-                    DescriptorWrite::uniform_buffers(1, &[left_view_buffer]),
-                ]);
-                right_descriptor.update(&[
-                    DescriptorWrite::combined_samplers(0, &[&image]),
-                    DescriptorWrite::uniform_buffers(1, &[right_view_buffer]),
-                ]);
+                left_descriptor.update(&[DescriptorWrite::uniform_buffers(0, &[left_view_buffer])]);
+                right_descriptor
+                    .update(&[DescriptorWrite::uniform_buffers(0, &[right_view_buffer])]);
 
-                Ok((image, TargetMode::Stereo(left_descriptor, right_descriptor)))
+                Ok(TargetMode::Stereo(left_descriptor, right_descriptor))
             }
         }
     }
