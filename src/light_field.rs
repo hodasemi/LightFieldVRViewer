@@ -7,6 +7,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 
+const TEXTURE_WIDTH_M: f32 = 0.2;
+const INTER_IMAGE_GAP_M: f32 = 0.01;
+const X_OFFSET_M: f32 = 0.0;
+const Y_OFFSET_M: f32 = 2.0;
+
 #[derive(Clone, Debug)]
 pub struct SingleView {
     image: Arc<Image>,
@@ -99,7 +104,7 @@ impl LightField {
                         y as u32,
                         config.extrinsics.horizontal_camera_count,
                         config.extrinsics.vertical_camera_count,
-                        -3.0,
+                        -1.5,
                     )?);
                 }
             }
@@ -148,24 +153,19 @@ impl LightField {
         h: u32,
         z: f32,
     ) -> VerboseResult<SingleView> {
-        // width of texture = 20 centimeters
-        let width = 0.2;
         // keep images ratio
-        let height = (width * image.width() as f32) / image.height() as f32;
+        let height = (TEXTURE_WIDTH_M * image.width() as f32) / image.height() as f32;
 
-        // gap between images = 5 centimeters
-        let inter_image_gap = 0.05;
-
-        let complete_field_width = width * w as f32 + inter_image_gap * (w - 1) as f32;
-        let complete_field_height = height * h as f32 + inter_image_gap * (h - 1) as f32;
+        let complete_field_width = TEXTURE_WIDTH_M * w as f32 + INTER_IMAGE_GAP_M * (w - 1) as f32;
+        let complete_field_height = height * h as f32 + INTER_IMAGE_GAP_M * (h - 1) as f32;
 
         let total_left = -(complete_field_width / 2.0);
         let total_top = complete_field_height / 2.0;
 
-        let left = total_left + ((width + inter_image_gap) * x as f32);
-        let right = total_left + ((width + inter_image_gap) * x as f32) + width;
-        let top = total_top - ((height + inter_image_gap) * y as f32);
-        let bottom = total_top - ((height + inter_image_gap) * y as f32) - height;
+        let left = total_left + ((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32) + X_OFFSET_M;
+        let right = total_left + ((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32) + TEXTURE_WIDTH_M + X_OFFSET_M;
+        let top = total_top - ((height + INTER_IMAGE_GAP_M) * y as f32) + Y_OFFSET_M;
+        let bottom = total_top - ((height + INTER_IMAGE_GAP_M) * y as f32) - height + Y_OFFSET_M;
 
         let data = [
             ExampleVertex::new(left, top, z, 0.0, 0.0),
