@@ -1,7 +1,9 @@
 use context::prelude::*;
 
 use super::config::Config;
+use super::error::Result;
 use super::example_object::ExampleVertex;
+use crate::error::LightFieldError;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -24,7 +26,7 @@ impl SingleView {
         &self,
         command_buffer: &Arc<CommandBuffer>,
         transform_descriptor: &Arc<DescriptorSet>,
-    ) -> VerboseResult<()> {
+    ) -> std::result::Result<(), PresentationError> {
         command_buffer.bind_descriptor_sets_minimal(&[&self.descriptor, transform_descriptor])?;
         command_buffer.bind_vertex_buffer(&self.buffer);
         command_buffer.draw_complete_single_instance(self.buffer.size() as u32);
@@ -40,7 +42,7 @@ pub struct LightField {
 }
 
 impl LightField {
-    pub fn new(context: &Arc<Context>, dir: &str) -> VerboseResult<Self> {
+    pub fn new(context: &Arc<Context>, dir: &str) -> Result<Self> {
         let config = Config::load(&format!("{}/parameters.cfg", dir))?;
 
         let mut input_images = vec![
@@ -80,12 +82,18 @@ impl LightField {
                         // check if texture dimensions match meta information
                         if image.width() != meta_image_width || image.height() != meta_image_height
                         {
-                            create_error!(format!("Image ({}) has a not expected extent", path));
+                            return Err(LightFieldError::light_field_loader(&format!(
+                                "Image ({}) has a not expected extent",
+                                path
+                            )));
                         }
 
                         image
                     } else {
-                        create_error!(format!("{} does not exist", path));
+                        return Err(LightFieldError::light_field_loader(&format!(
+                            "{} does not exist",
+                            path
+                        )));
                     };
 
                     Ok((image, x, y))
@@ -122,7 +130,7 @@ impl LightField {
         &self,
         command_buffer: &Arc<CommandBuffer>,
         transform_descriptor: &Arc<DescriptorSet>,
-    ) -> VerboseResult<()> {
+    ) -> std::result::Result<(), PresentationError> {
         for row in self.input_images.iter() {
             for single_view_opt in row.iter() {
                 if let Some(single_view) = single_view_opt {
@@ -134,15 +142,15 @@ impl LightField {
         Ok(())
     }
 
-    pub fn descriptor_layout(device: &Arc<Device>) -> VerboseResult<Arc<DescriptorSetLayout>> {
-        DescriptorSetLayout::new()
+    pub fn descriptor_layout(device: &Arc<Device>) -> Result<Arc<DescriptorSetLayout>> {
+        Ok(DescriptorSetLayout::new()
             .add_layout_binding(
                 0,
                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                 VK_SHADER_STAGE_FRAGMENT_BIT,
                 0,
             )
-            .build(device.clone())
+            .build(device.clone())?)
     }
 
     fn create_single_view(
@@ -152,7 +160,7 @@ impl LightField {
         w: u32,
         h: u32,
         z: f32,
-    ) -> VerboseResult<SingleView> {
+    ) -> Result<SingleView> {
         // keep images ratio
         let height = (TEXTURE_WIDTH_M * image.width() as f32) / image.height() as f32;
 
@@ -163,7 +171,10 @@ impl LightField {
         let total_top = complete_field_height / 2.0;
 
         let left = total_left + ((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32) + X_OFFSET_M;
-        let right = total_left + ((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32) + TEXTURE_WIDTH_M + X_OFFSET_M;
+        let right = total_left
+            + ((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32)
+            + TEXTURE_WIDTH_M
+            + X_OFFSET_M;
         let top = total_top - ((height + INTER_IMAGE_GAP_M) * y as f32) + Y_OFFSET_M;
         let bottom = total_top - ((height + INTER_IMAGE_GAP_M) * y as f32) - height + Y_OFFSET_M;
 

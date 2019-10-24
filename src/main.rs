@@ -1,14 +1,16 @@
 use context::prelude::*;
 
 mod config;
+mod error;
 mod example_object;
 mod light_field;
 mod light_field_viewer;
 
+use error::Result;
 use light_field::LightField;
 use light_field_viewer::LightFieldViewer;
 
-fn main() -> VerboseResult<()> {
+fn main() -> Result<()> {
     let sample_count = VK_SAMPLE_COUNT_1_BIT;
 
     let context = Context::new()

@@ -1,5 +1,7 @@
 use context::prelude::*;
 
+use crate::error::{LightFieldError, Result};
+
 use std::collections::HashMap;
 
 const FOCAL_LENGTH: &str = "focal_length_mm";
@@ -26,29 +28,32 @@ pub struct Intrinsic {
 }
 
 impl Intrinsic {
-    pub fn load(data: &HashMap<String, Value>) -> VerboseResult<Self> {
+    pub fn load(data: &HashMap<String, Value>) -> Result<Self> {
         Ok(Intrinsic {
             focal_length: data
                 .get(FOCAL_LENGTH)
-                .ok_or("focal length not present")?
+                .ok_or(LightFieldError::config_loader("focal length not present"))?
                 .apply_value()?,
 
             image_width: data
                 .get(IMAGE_WIDTH)
-                .ok_or("image width not present")?
+                .ok_or(LightFieldError::config_loader("image width not present"))?
                 .apply_value()?,
 
             image_height: data
                 .get(IMAGE_HEIGHT)
-                .ok_or("image height not present")?
+                .ok_or(LightFieldError::config_loader("image height not present"))?
                 .apply_value()?,
 
             sensor_size: data
                 .get(SENSOR_SIZE)
-                .ok_or("sensor_size not present")?
+                .ok_or(LightFieldError::config_loader("sensor_size not present"))?
                 .apply_value()?,
 
-            fstop: data.get(FSTOP).ok_or("fstop not present")?.apply_value()?,
+            fstop: data
+                .get(FSTOP)
+                .ok_or(LightFieldError::config_loader("fstop not present"))?
+                .apply_value()?,
         })
     }
 }

@@ -1,5 +1,7 @@
 use context::prelude::*;
 
+use crate::error::{LightFieldError, Result};
+
 use super::{extrinsic::Extrinsic, intrinsic::Intrinsic, meta::Meta};
 
 const META_TAG: &str = "meta";
@@ -14,26 +16,20 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn load(path: &str) -> VerboseResult<Config> {
+    pub fn load(path: &str) -> Result<Config> {
         let config = ConfigHandler::read_config(path)?;
 
-        let intrinsics = Intrinsic::load(
-            config
-                .get(INTRINSIC)
-                .ok_or("intrinsic tag is missing in config")?,
-        )?;
+        let intrinsics = Intrinsic::load(config.get(INTRINSIC).ok_or(
+            LightFieldError::config_loader("intrinsic tag is missing in config"),
+        )?)?;
 
-        let extrinsics = Extrinsic::load(
-            config
-                .get(EXTRINSIC)
-                .ok_or("extrinsic tag is missing in config")?,
-        )?;
+        let extrinsics = Extrinsic::load(config.get(EXTRINSIC).ok_or(
+            LightFieldError::config_loader("extrinsic tag is missing in config"),
+        )?)?;
 
-        let meta = Meta::load(
-            config
-                .get(META_TAG)
-                .ok_or("meta tag is missing in config")?,
-        )?;
+        let meta = Meta::load(config.get(META_TAG).ok_or(LightFieldError::config_loader(
+            "meta tag is missing in config",
+        ))?)?;
 
         Ok(Config {
             meta,
