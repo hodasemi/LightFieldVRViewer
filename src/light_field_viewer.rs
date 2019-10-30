@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use cgmath::{vec3, vec4, Matrix4, Point3};
 
-use super::{error::Result, example_object::ExampleVertex, light_field::LightField};
+use super::{example_object::ExampleVertex, light_field::LightField};
 
 pub struct LightFieldViewer {
     render_targets: TargetMode<RenderTarget>,
@@ -27,7 +27,7 @@ impl LightFieldViewer {
         context: &Arc<Context>,
         sample_count: VkSampleCountFlags,
         light_fields: Vec<LightField>,
-    ) -> Result<Arc<Self>> {
+    ) -> VerboseResult<Arc<Self>> {
         let view_buffers = Self::create_view_buffers(context)?;
 
         let transform_descriptor = Self::create_transform_descriptor(context, &view_buffers)?;
@@ -83,17 +83,17 @@ impl GameObject for LightFieldViewer {
         "LightFieldViewer"
     }
 
-    fn update(&self) -> std::result::Result<(), ContextError> {
+    fn update(&self) -> VerboseResult<()> {
         Ok(())
     }
 
-    fn event(&self, _event: Event) -> std::result::Result<(), ContextError> {
+    fn event(&self, _event: Event) -> VerboseResult<()> {
         Ok(())
     }
 }
 
 impl TScene for LightFieldViewer {
-    fn update(&self) -> std::result::Result<(), PresentationError> {
+    fn update(&self) -> VerboseResult<()> {
         Ok(())
     }
 
@@ -102,7 +102,7 @@ impl TScene for LightFieldViewer {
         command_buffer: &Arc<CommandBuffer>,
         indices: &TargetMode<usize>,
         transforms: &Option<TargetMode<VRTransformations>>,
-    ) -> std::result::Result<(), PresentationError> {
+    ) -> VerboseResult<()> {
         match (
             indices,
             &self.view_buffers,
@@ -137,7 +137,7 @@ impl TScene for LightFieldViewer {
             ) => {
                 let (left_transform, right_transform) = transforms
                     .as_ref()
-                    .ok_or(PresentationError::target_mode("no transforms present"))?
+                    .ok_or("no transforms present")?
                     .stereo()?;
 
                 Self::render(
@@ -162,13 +162,13 @@ impl TScene for LightFieldViewer {
                     &self.light_fields,
                 )?;
             }
-            _ => return Err(PresentationError::target_mode("invalid target mode setup")),
+            _ => create_error!("invalid target mode setup"),
         }
 
         Ok(())
     }
 
-    fn resize(&self) -> std::result::Result<(), PresentationError> {
+    fn resize(&self) -> VerboseResult<()> {
         println!("resize not implemented!");
 
         Ok(())
@@ -185,7 +185,7 @@ impl LightFieldViewer {
         transform: &VRTransformations,
         descriptor_set: &Arc<DescriptorSet>,
         light_fields: &[LightField],
-    ) -> std::result::Result<(), PresentationError> {
+    ) -> VerboseResult<()> {
         {
             let mut mapped = view_buffer.map_complete()?;
             mapped[0] = *transform;
@@ -211,7 +211,7 @@ impl LightFieldViewer {
         sample_count: VkSampleCountFlags,
         render_targets: &TargetMode<RenderTarget>,
         descriptors: &[&dyn VkHandle<VkDescriptorSetLayout>],
-    ) -> Result<TargetMode<Arc<Pipeline>>> {
+    ) -> VerboseResult<TargetMode<Arc<Pipeline>>> {
         let vertex_shader = ShaderModule::new(context.device().clone(), vs, ShaderType::Vertex)?;
         let fragment_shader =
             ShaderModule::new(context.device().clone(), fs, ShaderType::Fragment)?;
@@ -267,7 +267,7 @@ impl LightFieldViewer {
         sample_count: VkSampleCountFlags,
         render_pass: &Arc<RenderPass>,
         pipeline_layout: &Arc<PipelineLayout>,
-    ) -> Result<Arc<Pipeline>> {
+    ) -> VerboseResult<Arc<Pipeline>> {
         let input_bindings = [VkVertexInputBindingDescription {
             binding: 0,
             stride: mem::size_of::<ExampleVertex>() as u32,
@@ -420,7 +420,7 @@ impl LightFieldViewer {
 
     fn create_view_buffers(
         context: &Arc<Context>,
-    ) -> Result<TargetMode<Arc<Buffer<VRTransformations>>>> {
+    ) -> VerboseResult<TargetMode<Arc<Buffer<VRTransformations>>>> {
         let render_core = context.render_core();
 
         match render_core.images() {
@@ -449,7 +449,7 @@ impl LightFieldViewer {
     fn create_transform_descriptor(
         context: &Arc<Context>,
         view_buffers: &TargetMode<Arc<Buffer<VRTransformations>>>,
-    ) -> Result<TargetMode<Arc<DescriptorSet>>> {
+    ) -> VerboseResult<TargetMode<Arc<DescriptorSet>>> {
         let descriptor_layout = DescriptorSetLayout::new()
             .add_layout_binding(
                 0,
@@ -486,7 +486,7 @@ impl LightFieldViewer {
     fn create_descriptor_set(
         device: &Arc<Device>,
         layout: &Arc<DescriptorSetLayout>,
-    ) -> Result<Arc<DescriptorSet>> {
+    ) -> VerboseResult<Arc<DescriptorSet>> {
         let descriptor_pool = DescriptorPool::new()
             .set_layout(layout.clone())
             .build(device.clone())?;
@@ -494,7 +494,7 @@ impl LightFieldViewer {
         Ok(DescriptorPool::prepare_set(&descriptor_pool).allocate()?)
     }
 
-    fn create_render_targets(context: &Arc<Context>) -> Result<TargetMode<RenderTarget>> {
+    fn create_render_targets(context: &Arc<Context>) -> VerboseResult<TargetMode<RenderTarget>> {
         let render_core = context.render_core();
         let images = render_core.images();
 

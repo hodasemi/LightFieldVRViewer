@@ -1,7 +1,5 @@
 use context::prelude::*;
 
-use crate::error::{LightFieldError, Result};
-
 use cgmath::{vec3, Rad, Vector3, Zero};
 
 use std::collections::HashMap;
@@ -39,60 +37,56 @@ pub struct Extrinsic {
 }
 
 impl Extrinsic {
-    pub fn load(data: &HashMap<String, Value>) -> Result<Self> {
-        let horizontal_camera_count = data
-            .get(CAMERA_X_COUNT)
-            .ok_or(LightFieldError::config_loader("camera x count not present"))?;
-        let vertical_camera_count = data
-            .get(CAMERA_Y_COUNT)
-            .ok_or(LightFieldError::config_loader("camera y count not present"))?;
-        let baseline = data
-            .get(BASELINE)
-            .ok_or(LightFieldError::config_loader("baseline not present"))?;
-        let focus_distance = data
-            .get(FOCUS_DISTANCE)
-            .ok_or(LightFieldError::config_loader("focus distance not present"))?;
-        let cam_x = data
-            .get(CAMERA_CENTER_X)
-            .ok_or(LightFieldError::config_loader(
-                "camera center x not present",
-            ))?
-            .apply_value()?;
-        let cam_y = data
-            .get(CAMERA_CENTER_Y)
-            .ok_or(LightFieldError::config_loader(
-                "camera center y not present",
-            ))?
-            .apply_value()?;
-        let cam_z = data
-            .get(CAMERA_CENTER_Z)
-            .ok_or(LightFieldError::config_loader(
-                "camera center z not present",
-            ))?
-            .apply_value()?;
-        let cam_rx = data
-            .get(CAMERA_RX)
-            .ok_or(LightFieldError::config_loader("camera rx not present"))?
-            .apply_value()?;
-        let cam_ry = data
-            .get(CAMERA_RY)
-            .ok_or(LightFieldError::config_loader("camera ry not present"))?
-            .apply_value()?;
-        let cam_rz = data
-            .get(CAMERA_RZ)
-            .ok_or(LightFieldError::config_loader("camera rz not present"))?
-            .apply_value()?;
-        let offset = data
-            .get(OFFSET)
-            .ok_or(LightFieldError::config_loader("offset not present"))?;
-
+    pub fn load(data: &HashMap<String, Value>) -> VerboseResult<Self> {
         let mut config = Self::default();
 
-        horizontal_camera_count.set_value(&mut config.horizontal_camera_count)?;
-        vertical_camera_count.set_value(&mut config.vertical_camera_count)?;
-        baseline.set_value(&mut config.baseline)?;
-        focus_distance.set_value(&mut config.focus_distance)?;
-        offset.set_value(&mut config.offset)?;
+        config.horizontal_camera_count = data
+            .get(CAMERA_X_COUNT)
+            .ok_or("camera x count not present")?
+            .to_value()?;
+
+        config.vertical_camera_count = data
+            .get(CAMERA_Y_COUNT)
+            .ok_or("camera y count not present")?
+            .to_value()?;
+
+        config.baseline = data
+            .get(BASELINE)
+            .ok_or("baseline not present")?
+            .to_value()?;
+
+        config.focus_distance = data
+            .get(FOCUS_DISTANCE)
+            .ok_or("focus distance not present")?
+            .to_value()?;
+
+        config.offset = data.get(OFFSET).ok_or("offset not present")?.to_value()?;
+
+        let cam_x = data
+            .get(CAMERA_CENTER_X)
+            .ok_or("camera center x not present")?
+            .to_value()?;
+        let cam_y = data
+            .get(CAMERA_CENTER_Y)
+            .ok_or("camera center y not present")?
+            .to_value()?;
+        let cam_z = data
+            .get(CAMERA_CENTER_Z)
+            .ok_or("camera center z not present")?
+            .to_value()?;
+
+        let cam_rx = data
+            .get(CAMERA_RX)
+            .ok_or("camera rx not present")?
+            .to_value()?;
+        let cam_ry = data
+            .get(CAMERA_RY)
+            .ok_or("camera ry not present")?
+            .to_value()?;
+        let cam_rz = data
+            .get(CAMERA_RZ)
+            .ok_or("camera rz not present")?
+            .to_value()?;
 
         config.camera_center = vec3(cam_x, cam_y, cam_z);
         config.camera_rotation = vec3(Rad(cam_rx), Rad(cam_ry), Rad(cam_rz));
