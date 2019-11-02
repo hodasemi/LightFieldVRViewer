@@ -1,4 +1,5 @@
 use context::prelude::*;
+use context::ContextObject;
 
 use std::mem;
 use std::slice;
@@ -78,7 +79,7 @@ impl LightFieldViewer {
     }
 }
 
-impl GameObject for LightFieldViewer {
+impl ContextObject for LightFieldViewer {
     fn name(&self) -> &str {
         "LightFieldViewer"
     }
@@ -87,7 +88,7 @@ impl GameObject for LightFieldViewer {
         Ok(())
     }
 
-    fn event(&self, _event: Event) -> VerboseResult<()> {
+    fn event(&self, _event: PresentationEventType) -> VerboseResult<()> {
         Ok(())
     }
 }
