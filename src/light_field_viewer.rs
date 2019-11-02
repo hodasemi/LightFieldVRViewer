@@ -5,9 +5,9 @@ use std::mem;
 use std::slice;
 use std::sync::Arc;
 
-use cgmath::{vec3, vec4, Matrix4, Point3};
+use cgmath::{vec4, Deg};
 
-use super::{example_object::ExampleVertex, light_field::LightField};
+use super::{example_object::ExampleVertex, light_field::LightField, view_emulator::ViewEmulator};
 
 pub struct LightFieldViewer {
     render_targets: TargetMode<RenderTarget>,
@@ -17,8 +17,7 @@ pub struct LightFieldViewer {
     view_buffers: TargetMode<Arc<Buffer<VRTransformations>>>,
     transform_descriptor: TargetMode<Arc<DescriptorSet>>,
 
-    // simulate vr transform for normal rendering
-    simulation_transform: VRTransformations,
+    view_emulator: ViewEmulator,
 
     light_fields: Vec<LightField>,
 }
@@ -49,20 +48,6 @@ impl LightFieldViewer {
             &[&light_field_desc_layout, desc],
         )?;
 
-        let simulation_transform = VRTransformations {
-            proj: perspective(
-                45.0,
-                context.render_core().width() as f32 / context.render_core().height() as f32,
-                0.01,
-                100.0,
-            ),
-            view: Matrix4::look_at(
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-                vec3(0.0, 0.0, 1.0),
-            ),
-        };
-
         Ok(Arc::new(LightFieldViewer {
             // config,
             render_targets,
@@ -72,7 +57,7 @@ impl LightFieldViewer {
             view_buffers,
             transform_descriptor,
 
-            simulation_transform,
+            view_emulator: ViewEmulator::new(context, Deg(10.0), 0.5),
 
             light_fields,
         }))
@@ -85,10 +70,21 @@ impl ContextObject for LightFieldViewer {
     }
 
     fn update(&self) -> VerboseResult<()> {
+        self.view_emulator.update()?;
+
         Ok(())
     }
 
-    fn event(&self, _event: PresentationEventType) -> VerboseResult<()> {
+    fn event(&self, event: PresentationEventType) -> VerboseResult<()> {
+        // use `view_buffers` as reference
+        if let TargetMode::Single(_) = self.view_buffers {
+            match event {
+                PresentationEventType::KeyDown(key) => self.view_emulator.on_key_down(key),
+                PresentationEventType::KeyUp(key) => self.view_emulator.on_key_up(key),
+                _ => (),
+            }
+        }
+
         Ok(())
     }
 }
@@ -124,7 +120,7 @@ impl TScene for LightFieldViewer {
                     pipeline,
                     command_buffer,
                     view_buffer,
-                    &self.simulation_transform,
+                    &self.view_emulator.simulation_transform(),
                     example_descriptor,
                     &self.light_fields,
                 )?;

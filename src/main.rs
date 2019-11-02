@@ -4,6 +4,7 @@ mod config;
 mod example_object;
 mod light_field;
 mod light_field_viewer;
+mod view_emulator;
 
 use light_field::LightField;
 use light_field_viewer::LightFieldViewer;
@@ -13,15 +14,16 @@ fn main() -> VerboseResult<()> {
 
     let context = Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
-            debugging: false,
+            debugging: true,
             renderdoc: false,
             steam_layer: false,
             use_util: false,
             verbose: false,
         })
         .enable_vsync()
+        .enable_keyboard()
         .set_sample_count(sample_count)
-        .set_vr_mode(VRMode::OpenVR)
+        // .set_vr_mode(VRMode::OpenVR)
         // .set_openxr_json("/usr/share/openxr/1/openxr_monado.json")
         .build()?;
 
@@ -29,10 +31,8 @@ fn main() -> VerboseResult<()> {
 
     let light_field_viewer = LightFieldViewer::new(&context, sample_count, vec![light_field])?;
 
-    context.set_game_object(Some(light_field_viewer.clone()))?;
-    context
-        .render_core()
-        .add_scene(light_field_viewer.clone())?;
+    context.set_context_object(Some(light_field_viewer.clone()))?;
+    context.render_core().add_scene(light_field_viewer)?;
 
     context.run()?;
 
