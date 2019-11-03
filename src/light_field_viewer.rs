@@ -166,9 +166,7 @@ impl TScene for LightFieldViewer {
     }
 
     fn resize(&self) -> VerboseResult<()> {
-        println!("resize not implemented!");
-
-        Ok(())
+        unimplemented!()
     }
 }
 

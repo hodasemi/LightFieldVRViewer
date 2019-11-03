@@ -27,9 +27,9 @@ fn main() -> VerboseResult<()> {
         // .set_openxr_json("/usr/share/openxr/1/openxr_monado.json")
         .build()?;
 
-    let light_field = LightField::new(&context, "test_data")?;
+    let light_field = vec![LightField::new(&context, "test_data")?];
 
-    let light_field_viewer = LightFieldViewer::new(&context, sample_count, vec![light_field])?;
+    let light_field_viewer = LightFieldViewer::new(&context, sample_count, light_field)?;
 
     context.set_context_object(Some(light_field_viewer.clone()))?;
     context.render_core().add_scene(light_field_viewer)?;
