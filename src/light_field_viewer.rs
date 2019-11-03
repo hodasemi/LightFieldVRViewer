@@ -311,8 +311,8 @@ impl LightFieldViewer {
 
         let viewport = VkPipelineViewportStateCreateInfo::new(
             VK_PIPELINE_VIEWPORT_STATE_CREATE_NULL_BIT,
-            &[viewport],
-            &[scissor],
+            slice::from_ref(&viewport),
+            slice::from_ref(&scissor),
         );
 
         let input_assembly = VkPipelineInputAssemblyStateCreateInfo::new(
@@ -336,7 +336,7 @@ impl LightFieldViewer {
             false,
             false,
             VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_BACK_BIT,
+            VK_CULL_MODE_NONE,
             VK_FRONT_FACE_COUNTER_CLOCKWISE,
             false,
             0.0,
