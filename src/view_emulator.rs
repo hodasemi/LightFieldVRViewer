@@ -35,7 +35,7 @@ impl ViewEmulator {
     ) -> Self {
         let angle = Deg(0.0);
 
-        let position = Point3::new(0.0, 0.0, 0.0);
+        let position = Point3::new(0.0, 1.5, 0.0);
         let direction = Matrix3::from_axis_angle(UP, angle) * DIRECTION;
 
         let simulation_transform = VRTransformations {
@@ -83,12 +83,12 @@ impl ViewEmulator {
             let dir = self.direction();
 
             if self.x_dir.get() < 0 {
-                let left_dir = vec3(-dir.y, dir.x, dir.z) * self.movement_speed;
+                let left_dir = vec3(dir.z, dir.y, -dir.x) * self.movement_speed;
 
                 self.position
                     .set(self.position.get() + left_dir * time_diff as f32);
             } else if self.x_dir.get() > 0 {
-                let right_dir = vec3(dir.y, -dir.x, dir.z) * self.movement_speed;
+                let right_dir = vec3(-dir.z, dir.y, dir.x) * self.movement_speed;
 
                 self.position
                     .set(self.position.get() + right_dir * time_diff as f32);

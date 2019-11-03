@@ -1,7 +1,9 @@
 use context::prelude::*;
 use context::ContextObject;
 
+use std::cell::RefCell;
 use std::mem;
+use std::ops::Deref;
 use std::slice;
 use std::sync::Arc;
 
@@ -10,9 +12,11 @@ use cgmath::{vec4, Deg};
 use super::{example_object::ExampleVertex, light_field::LightField, view_emulator::ViewEmulator};
 
 pub struct LightFieldViewer {
-    render_targets: TargetMode<RenderTarget>,
+    context: Arc<Context>,
 
-    pipelines: TargetMode<Arc<Pipeline>>,
+    render_targets: RefCell<TargetMode<RenderTarget>>,
+
+    pipelines: RefCell<TargetMode<Arc<Pipeline>>>,
 
     view_buffers: TargetMode<Arc<Buffer<VRTransformations>>>,
     transform_descriptor: TargetMode<Arc<DescriptorSet>>,
@@ -20,6 +24,8 @@ pub struct LightFieldViewer {
     view_emulator: ViewEmulator,
 
     light_fields: Vec<LightField>,
+
+    sample_count: VkSampleCountFlags,
 }
 
 impl LightFieldViewer {
@@ -49,10 +55,11 @@ impl LightFieldViewer {
         )?;
 
         Ok(Arc::new(LightFieldViewer {
-            // config,
-            render_targets,
+            context: context.clone(),
 
-            pipelines,
+            // config,
+            render_targets: RefCell::new(render_targets),
+            pipelines: RefCell::new(pipelines),
 
             view_buffers,
             transform_descriptor,
@@ -60,6 +67,8 @@ impl LightFieldViewer {
             view_emulator: ViewEmulator::new(context, Deg(10.0), 0.5),
 
             light_fields,
+
+            sample_count,
         }))
     }
 }
@@ -104,8 +113,8 @@ impl TScene for LightFieldViewer {
             indices,
             &self.view_buffers,
             &self.transform_descriptor,
-            &self.pipelines,
-            &self.render_targets,
+            self.pipelines.try_borrow()?.deref(),
+            self.render_targets.try_borrow()?.deref(),
         ) {
             (
                 TargetMode::Single(index),
@@ -166,7 +175,28 @@ impl TScene for LightFieldViewer {
     }
 
     fn resize(&self) -> VerboseResult<()> {
-        unimplemented!()
+        let render_targets = Self::create_render_targets(&self.context)?;
+
+        let light_field_desc_layout = LightField::descriptor_layout(self.context.device())?;
+
+        let desc = match &self.transform_descriptor {
+            TargetMode::Single(desc) => desc,
+            TargetMode::Stereo(desc, _) => desc,
+        };
+
+        let pipelines = Self::create_pipelines(
+            &self.context,
+            "shader/quad.vert.spv",
+            "shader/quad.frag.spv",
+            self.sample_count,
+            &render_targets,
+            &[&light_field_desc_layout, desc],
+        )?;
+
+        *self.render_targets.try_borrow_mut()? = render_targets;
+        *self.pipelines.try_borrow_mut()? = pipelines;
+
+        Ok(())
     }
 }
 
