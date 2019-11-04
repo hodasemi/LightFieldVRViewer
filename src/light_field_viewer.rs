@@ -88,7 +88,10 @@ impl ContextObject for LightFieldViewer {
         // use `view_buffers` as reference
         if let TargetMode::Single(_) = self.view_buffers {
             match event {
-                PresentationEventType::KeyDown(key) => self.view_emulator.on_key_down(key),
+                PresentationEventType::KeyDown(key) => match key {
+                    Keycode::Escape => self.context.close(),
+                    _ => self.view_emulator.on_key_down(key),
+                },
                 PresentationEventType::KeyUp(key) => self.view_emulator.on_key_up(key),
                 _ => (),
             }
