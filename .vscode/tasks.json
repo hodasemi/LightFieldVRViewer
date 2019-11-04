@@ -6,7 +6,7 @@
         {
             "type": "shell",
             "label": "Run",
-            "command": "cargo run",
+            "command": "cargo run --release",
             "args": [],
             "problemMatcher": [
                 "$rustc"
