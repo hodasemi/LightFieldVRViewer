@@ -144,6 +144,18 @@ impl ViewEmulator {
         }
     }
 
+    pub fn on_resize(&self) {
+        let mut transform = self.simulation_transform.get();
+        transform.proj = perspective(
+            45.0,
+            self.context.render_core().width() as f32 / self.context.render_core().height() as f32,
+            0.01,
+            100.0,
+        );
+
+        self.simulation_transform.set(transform);
+    }
+
     pub fn simulation_transform(&self) -> VRTransformations {
         self.simulation_transform.get()
     }

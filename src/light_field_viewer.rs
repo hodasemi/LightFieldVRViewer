@@ -175,6 +175,8 @@ impl TScene for LightFieldViewer {
     }
 
     fn resize(&self) -> VerboseResult<()> {
+        self.view_emulator.on_resize();
+
         let render_targets = Self::create_render_targets(&self.context)?;
 
         let light_field_desc_layout = LightField::descriptor_layout(self.context.device())?;
