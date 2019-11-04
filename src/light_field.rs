@@ -3,14 +3,23 @@ use context::prelude::*;
 use super::config::Config;
 use super::example_object::ExampleVertex;
 
+use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread;
+
+use pxm::PFM;
 
 const TEXTURE_WIDTH_M: f32 = 0.2;
 const INTER_IMAGE_GAP_M: f32 = 0.01;
 const X_OFFSET_M: f32 = 0.0;
 const Y_OFFSET_M: f32 = 2.0;
+
+#[derive(Clone, Debug)]
+pub struct AlphaMap {
+    data: Vec<Vec<bool>>,
+}
 
 #[derive(Clone, Debug)]
 pub struct SingleView {
@@ -43,9 +52,14 @@ impl LightField {
     pub fn new(context: &Arc<Context>, dir: &str) -> VerboseResult<Self> {
         let config = Config::load(&format!("{}/parameters.cfg", dir))?;
 
+        // let depth_high_resolution = Self::load_depth_pfm(dir, "gt_depth_highres")?;
+        // let depth_low_resolution = Self::load_depth_pfm(dir, "gt_depth_lowres")?;
+        // let dispersion_high_resolution = Self::load_dispersion_pfm(dir, "gt_disp_highres")?;
+        let dispersion_low_resolution = Self::load_dispersion_pfm(dir, "gt_disp_lowres", 10, 0.5)?;
+
         let mut input_images = vec![
-            vec![None; config.extrinsics.horizontal_camera_count as usize];
-            config.extrinsics.vertical_camera_count as usize
+            vec![None; config.extrinsics.vertical_camera_count as usize];
+            config.extrinsics.horizontal_camera_count as usize
         ];
 
         let mut threads = Vec::with_capacity(
@@ -55,8 +69,8 @@ impl LightField {
 
         let mut total_index = 0;
 
-        for (y, col) in input_images.iter().enumerate() {
-            for (x, _image) in col.iter().enumerate() {
+        for (x, row) in input_images.iter().enumerate() {
+            for (y, _image) in row.iter().enumerate() {
                 let queue = context.queue().clone();
                 let device = context.device().clone();
 
@@ -200,5 +214,44 @@ impl LightField {
             descriptor: desc_set,
             buffer,
         })
+    }
+
+    fn load_depth_pfm(dir: &str, file: &str) -> VerboseResult<PFM> {
+        let pfm_file = File::open(&format!("{}/{}.pfm", dir, file))?;
+        let mut pfm_bufreader = BufReader::new(pfm_file);
+
+        Ok(PFM::read_from(&mut pfm_bufreader)?)
+    }
+
+    fn load_dispersion_pfm(
+        dir: &str,
+        file: &str,
+        alpha_map_count: usize,
+        epsilon: f32,
+    ) -> VerboseResult<Vec<AlphaMap>> {
+        let pfm_file = File::open(&format!("{}/{}.pfm", dir, file))?;
+        let mut pfm_bufreader = BufReader::new(pfm_file);
+
+        let pfm = PFM::read_from(&mut pfm_bufreader)?;
+
+        let mut alpha_maps = vec![
+            AlphaMap {
+                data: vec![vec![false; pfm.height as usize]; pfm.width as usize],
+            };
+            alpha_map_count
+        ];
+
+        for (index, disp_data) in pfm.data.iter().enumerate() {
+            let x = (index as f32 / pfm.height as f32).floor() as usize;
+            let y = index - (x * pfm.height);
+
+            for (disparity, alpha_map) in alpha_maps.iter_mut().enumerate() {
+                if (disp_data - disparity as f32).abs() <= epsilon {
+                    alpha_map.data[x][y] = true;
+                }
+            }
+        }
+
+        Ok(alpha_maps)
     }
 }
