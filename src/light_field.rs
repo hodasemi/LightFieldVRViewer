@@ -217,10 +217,7 @@ impl LightField {
     }
 
     fn load_depth_pfm(dir: &str, file: &str) -> VerboseResult<PFM> {
-        let pfm_file = File::open(&format!("{}/{}.pfm", dir, file))?;
-        let mut pfm_bufreader = BufReader::new(pfm_file);
-
-        Ok(PFM::read_from(&mut pfm_bufreader)?)
+        Self::open_pfm_file(&format!("{}/{}.pfm", dir, file))
     }
 
     fn load_dispersion_pfm(
@@ -229,10 +226,7 @@ impl LightField {
         alpha_map_count: usize,
         epsilon: f32,
     ) -> VerboseResult<Vec<AlphaMap>> {
-        let pfm_file = File::open(&format!("{}/{}.pfm", dir, file))?;
-        let mut pfm_bufreader = BufReader::new(pfm_file);
-
-        let pfm = PFM::read_from(&mut pfm_bufreader)?;
+        let pfm = Self::open_pfm_file(&format!("{}/{}.pfm", dir, file))?;
 
         let mut alpha_maps = vec![
             AlphaMap {
@@ -253,5 +247,13 @@ impl LightField {
         }
 
         Ok(alpha_maps)
+    }
+
+    #[inline]
+    fn open_pfm_file(path: &str) -> VerboseResult<PFM> {
+        let pfm_file = File::open(path)?;
+        let mut pfm_bufreader = BufReader::new(pfm_file);
+
+        Ok(PFM::read_from(&mut pfm_bufreader)?)
     }
 }
