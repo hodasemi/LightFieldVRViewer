@@ -2,8 +2,8 @@
 
 ## Requirements
 
-* Rust toolchain (https://www.rust-lang.org/)
-* CMake (https://cmake.org/)
+* Rust toolchain (https://www.rust-lang.org/) (tested with: rustc 1.38.0)
+* CMake (https://cmake.org/) (tested with: cmake 3.15.5)
 
 ## How to use
 
