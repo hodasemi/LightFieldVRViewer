@@ -3,6 +3,7 @@
 ## Requirements
 
 * Rust toolchain (https://www.rust-lang.org/)
+* CMake (https://cmake.org/)
 
 ## How to use
 
