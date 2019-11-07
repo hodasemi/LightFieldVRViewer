@@ -1,6 +1,6 @@
 use context::prelude::*;
 
-use cgmath::{vec3, Rad, Vector3, Zero};
+use cgmath::{vec3, Matrix4, Rad, Vector3, Zero};
 
 use std::collections::HashMap;
 
@@ -92,6 +92,13 @@ impl Extrinsic {
         config.camera_rotation = vec3(Rad(cam_rx), Rad(cam_ry), Rad(cam_rz));
 
         Ok(config)
+    }
+
+    pub fn camera_rotation_matrix(&self) -> Matrix4<f32> {
+        // https://www.mauriciopoppe.com/notes/computer-graphics/transformation-matrices/rotation/euler-angles/
+        Matrix4::from_angle_z(self.camera_rotation.z)
+            * Matrix4::from_angle_y(self.camera_rotation.y)
+            * Matrix4::from_angle_x(self.camera_rotation.x)
     }
 }
 

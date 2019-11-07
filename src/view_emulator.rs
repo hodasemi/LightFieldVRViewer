@@ -5,8 +5,7 @@ use cgmath::{vec3, Deg, Matrix3, Matrix4, Point3, Vector3};
 use std::cell::Cell;
 use std::sync::Arc;
 
-const DIRECTION: Vector3<f32> = vec3(0.0, 0.0, -1.0);
-const UP: Vector3<f32> = vec3(0.0, 1.0, 0.0);
+use crate::light_field_viewer::{DEFAULT_FORWARD, UP};
 
 pub struct ViewEmulator {
     context: Arc<Context>,
@@ -36,7 +35,7 @@ impl ViewEmulator {
         let angle = Deg(0.0);
 
         let position = Point3::new(0.0, 1.5, 0.0);
-        let direction = Matrix3::from_axis_angle(UP, angle) * DIRECTION;
+        let direction = Matrix3::from_axis_angle(UP, angle) * DEFAULT_FORWARD;
 
         let simulation_transform = VRTransformations {
             proj: perspective(
@@ -162,6 +161,6 @@ impl ViewEmulator {
 
     #[inline]
     fn direction(&self) -> Vector3<f32> {
-        Matrix3::from_axis_angle(UP, self.direction.get()) * DIRECTION
+        Matrix3::from_axis_angle(UP, self.direction.get()) * DEFAULT_FORWARD
     }
 }

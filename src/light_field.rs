@@ -2,6 +2,9 @@ use context::prelude::*;
 
 use super::config::Config;
 use super::example_object::ExampleVertex;
+use super::light_field_viewer::{DEFAULT_FORWARD, UP};
+
+use cgmath::{InnerSpace, Matrix4};
 
 use std::fs::File;
 use std::io::BufReader;
@@ -29,6 +32,56 @@ pub struct SingleView {
 }
 
 impl SingleView {
+    fn new(image: Arc<Image>, x: u32, y: u32, w: u32, h: u32, z: f32) -> VerboseResult<Self> {
+        // keep images ratio
+        let height = (TEXTURE_WIDTH_M * image.width() as f32) / image.height() as f32;
+
+        let complete_field_width = TEXTURE_WIDTH_M * w as f32 + INTER_IMAGE_GAP_M * (w - 1) as f32;
+        let complete_field_height = height * h as f32 + INTER_IMAGE_GAP_M * (h - 1) as f32;
+
+        let total_left = -(complete_field_width / 2.0);
+        let total_top = complete_field_height / 2.0;
+
+        let left = total_left + ((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32) + X_OFFSET_M;
+        let right = total_left
+            + ((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32)
+            + TEXTURE_WIDTH_M
+            + X_OFFSET_M;
+        let top = total_top - ((height + INTER_IMAGE_GAP_M) * y as f32) + Y_OFFSET_M;
+        let bottom = total_top - ((height + INTER_IMAGE_GAP_M) * y as f32) - height + Y_OFFSET_M;
+
+        let data = [
+            ExampleVertex::new(left, top, z, 0.0, 0.0),
+            ExampleVertex::new(left, bottom, z, 0.0, 1.0),
+            ExampleVertex::new(right, bottom, z, 1.0, 1.0),
+            ExampleVertex::new(right, bottom, z, 1.0, 1.0),
+            ExampleVertex::new(right, top, z, 1.0, 0.0),
+            ExampleVertex::new(left, top, z, 0.0, 0.0),
+        ];
+
+        let device = image.device();
+
+        let buffer = Buffer::new()
+            .set_usage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
+            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+            .set_data(&data)
+            .build(device.clone())?;
+
+        let descriptor_pool = DescriptorPool::new()
+            .set_layout(LightField::descriptor_layout(device)?)
+            .build(device.clone())?;
+
+        let desc_set = DescriptorPool::prepare_set(&descriptor_pool).allocate()?;
+
+        desc_set.update(&[DescriptorWrite::combined_samplers(0, &[&image])]);
+
+        Ok(SingleView {
+            image,
+            descriptor: desc_set,
+            buffer,
+        })
+    }
+
     fn render(
         &self,
         command_buffer: &Arc<CommandBuffer>,
@@ -83,13 +136,9 @@ impl LightField {
                     let path = format!("{}/input_Cam{:03}.png", dir, total_index);
 
                     let image = if Path::new(&path).exists() {
-                        println!("loading image {}", path);
-
                         let image = Image::from_file(&path)?
                             .nearest_sampler()
                             .build(&device, &queue)?;
-
-                        println!("loading finished ({})", path);
 
                         // check if texture dimensions match meta information
                         if image.width() != meta_image_width || image.height() != meta_image_height
@@ -109,19 +158,23 @@ impl LightField {
             }
         }
 
+        let center = config.extrinsics.camera_center;
+        let direction = (config.extrinsics.camera_rotation_matrix() * DEFAULT_FORWARD.extend(1.0))
+            .truncate()
+            .normalize();
+        let right = direction.cross(UP).normalize();
+
         for thread in threads {
-            if let Ok(thread_result) = thread.join() {
-                if let Ok((image, x, y)) = thread_result {
-                    input_images[x][y] = Some(Self::create_single_view(
-                        image,
-                        x as u32,
-                        y as u32,
-                        config.extrinsics.horizontal_camera_count,
-                        config.extrinsics.vertical_camera_count,
-                        -1.5,
-                    )?);
-                }
-            }
+            let (image, x, y) = thread.join()??;
+
+            input_images[x][y] = Some(SingleView::new(
+                image,
+                x as u32,
+                y as u32,
+                config.extrinsics.horizontal_camera_count,
+                config.extrinsics.vertical_camera_count,
+                -1.5,
+            )?);
         }
 
         println!("finished loading light field {}", dir);
@@ -157,63 +210,6 @@ impl LightField {
                 0,
             )
             .build(device.clone())?)
-    }
-
-    fn create_single_view(
-        image: Arc<Image>,
-        x: u32,
-        y: u32,
-        w: u32,
-        h: u32,
-        z: f32,
-    ) -> VerboseResult<SingleView> {
-        // keep images ratio
-        let height = (TEXTURE_WIDTH_M * image.width() as f32) / image.height() as f32;
-
-        let complete_field_width = TEXTURE_WIDTH_M * w as f32 + INTER_IMAGE_GAP_M * (w - 1) as f32;
-        let complete_field_height = height * h as f32 + INTER_IMAGE_GAP_M * (h - 1) as f32;
-
-        let total_left = -(complete_field_width / 2.0);
-        let total_top = complete_field_height / 2.0;
-
-        let left = total_left + ((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32) + X_OFFSET_M;
-        let right = total_left
-            + ((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32)
-            + TEXTURE_WIDTH_M
-            + X_OFFSET_M;
-        let top = total_top - ((height + INTER_IMAGE_GAP_M) * y as f32) + Y_OFFSET_M;
-        let bottom = total_top - ((height + INTER_IMAGE_GAP_M) * y as f32) - height + Y_OFFSET_M;
-
-        let data = [
-            ExampleVertex::new(left, top, z, 0.0, 0.0),
-            ExampleVertex::new(left, bottom, z, 0.0, 1.0),
-            ExampleVertex::new(right, bottom, z, 1.0, 1.0),
-            ExampleVertex::new(right, bottom, z, 1.0, 1.0),
-            ExampleVertex::new(right, top, z, 1.0, 0.0),
-            ExampleVertex::new(left, top, z, 0.0, 0.0),
-        ];
-
-        let device = image.device();
-
-        let buffer = Buffer::new()
-            .set_usage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-            .set_data(&data)
-            .build(device.clone())?;
-
-        let descriptor_pool = DescriptorPool::new()
-            .set_layout(Self::descriptor_layout(device)?)
-            .build(device.clone())?;
-
-        let desc_set = DescriptorPool::prepare_set(&descriptor_pool).allocate()?;
-
-        desc_set.update(&[DescriptorWrite::combined_samplers(0, &[&image])]);
-
-        Ok(SingleView {
-            image,
-            descriptor: desc_set,
-            buffer,
-        })
     }
 
     fn load_depth_pfm(dir: &str, file: &str) -> VerboseResult<PFM> {

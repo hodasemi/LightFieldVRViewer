@@ -7,9 +7,12 @@ use std::ops::Deref;
 use std::slice;
 use std::sync::Arc;
 
-use cgmath::{vec4, Deg};
+use cgmath::{vec3, vec4, Deg, Vector3};
 
 use super::{example_object::ExampleVertex, light_field::LightField, view_emulator::ViewEmulator};
+
+pub const DEFAULT_FORWARD: Vector3<f32> = vec3(0.0, 0.0, -1.0);
+pub const UP: Vector3<f32> = vec3(0.0, 1.0, 0.0);
 
 pub struct LightFieldViewer {
     context: Arc<Context>,
