@@ -4,7 +4,7 @@ use super::config::Config;
 use super::example_object::ExampleVertex;
 use super::light_field_viewer::{DEFAULT_FORWARD, UP};
 
-use cgmath::{InnerSpace, Matrix4};
+use cgmath::{Array, InnerSpace};
 
 use std::fs::File;
 use std::io::BufReader;
@@ -99,6 +99,11 @@ pub struct LightField {
     pub config: Config,
 
     pub input_images: Vec<Vec<Option<SingleView>>>,
+
+    _debug_image: Arc<Image>,
+    debug_descriptor: Arc<DescriptorSet>,
+    right_buffer: Arc<Buffer<ExampleVertex>>,
+    up_buffer: Arc<Buffer<ExampleVertex>>,
 }
 
 impl LightField {
@@ -158,11 +163,22 @@ impl LightField {
             }
         }
 
-        let center = config.extrinsics.camera_center;
-        let direction = (config.extrinsics.camera_rotation_matrix() * DEFAULT_FORWARD.extend(1.0))
-            .truncate()
-            .normalize();
+        // swap y and z coordinates
+        let mut center = config.extrinsics.camera_center;
+        center.swap_elements(1, 2);
+
+        let mut direction = (config.extrinsics.camera_rotation_matrix()
+            * DEFAULT_FORWARD.extend(1.0))
+        .truncate()
+        .normalize();
+
+        direction.swap_elements(1, 2);
+
         let right = direction.cross(UP).normalize();
+
+        let plane_center = center + direction * config.extrinsics.focus_distance;
+        let plane_right = plane_center + right;
+        let plane_up = plane_center + UP;
 
         for thread in threads {
             let (image, x, y) = thread.join()??;
@@ -179,9 +195,46 @@ impl LightField {
 
         println!("finished loading light field {}", dir);
 
+        let debug_image = Image::from_file("green.png")?
+            .nearest_sampler()
+            .build(context.device(), context.queue())?;
+
+        let descriptor_pool = DescriptorPool::new()
+            .set_layout(Self::descriptor_layout(context.device())?)
+            .build(context.device().clone())?;
+
+        let debug_descriptor = DescriptorPool::prepare_set(&descriptor_pool).allocate()?;
+
+        debug_descriptor.update(&[DescriptorWrite::combined_samplers(0, &[&debug_image])]);
+
+        let right_buffer = Buffer::new()
+            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+            .set_usage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
+            .set_data(&[
+                ExampleVertex::new(center.x, center.y, center.z, 0.0, 0.0),
+                ExampleVertex::new(plane_center.x, plane_center.y, plane_center.z, 0.0, 1.0),
+                ExampleVertex::new(plane_right.x, plane_right.y, plane_right.z, 1.0, 1.0),
+            ])
+            .build(context.device().clone())?;
+
+        let up_buffer = Buffer::new()
+            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+            .set_usage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
+            .set_data(&[
+                ExampleVertex::new(center.x, center.y, center.z, 0.0, 0.0),
+                ExampleVertex::new(plane_center.x, plane_center.y, plane_center.z, 0.0, 1.0),
+                ExampleVertex::new(plane_up.x, plane_up.y, plane_up.z, 1.0, 1.0),
+            ])
+            .build(context.device().clone())?;
+
         Ok(LightField {
             config,
             input_images,
+
+            _debug_image: debug_image,
+            debug_descriptor,
+            right_buffer,
+            up_buffer,
         })
     }
 
@@ -197,6 +250,15 @@ impl LightField {
                 }
             }
         }
+
+        command_buffer
+            .bind_descriptor_sets_minimal(&[&self.debug_descriptor, transform_descriptor])?;
+
+        command_buffer.bind_vertex_buffer(&self.right_buffer);
+        command_buffer.draw_complete_single_instance(self.right_buffer.size() as u32);
+
+        command_buffer.bind_vertex_buffer(&self.up_buffer);
+        command_buffer.draw_complete_single_instance(self.up_buffer.size() as u32);
 
         Ok(())
     }
