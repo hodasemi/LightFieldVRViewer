@@ -15,6 +15,8 @@ pub struct ViewEmulator {
 
     x_dir: Cell<i32>,
     y_dir: Cell<i32>,
+    z_dir: Cell<i32>,
+
     turn_dir: Cell<i32>,
 
     turn_speed: Deg<f32>,
@@ -55,6 +57,7 @@ impl ViewEmulator {
 
             x_dir: Cell::new(0),
             y_dir: Cell::new(0),
+            z_dir: Cell::new(0),
             turn_dir: Cell::new(0),
 
             turn_speed: turn_speed.into(),
@@ -70,7 +73,13 @@ impl ViewEmulator {
         let time_diff = self.context.time() - self.last_time.get();
         self.last_time.set(self.context.time());
 
-        if self.turn_dir.get() != 0 || self.x_dir.get() != 0 || self.y_dir.get() != 0 {
+        // check for any direction change
+        if self.turn_dir.get() != 0
+            || self.x_dir.get() != 0
+            || self.z_dir.get() != 0
+            || self.y_dir.get() != 0
+        {
+            // check for rotation
             if self.turn_dir.get() < 0 {
                 self.direction
                     .set(self.direction.get() + self.turn_speed * time_diff as f32);
@@ -81,6 +90,7 @@ impl ViewEmulator {
 
             let dir = self.direction();
 
+            // check for left/right movement
             if self.x_dir.get() < 0 {
                 let left_dir = vec3(dir.z, dir.y, -dir.x) * self.movement_speed;
 
@@ -93,13 +103,27 @@ impl ViewEmulator {
                     .set(self.position.get() + right_dir * time_diff as f32);
             }
 
-            if self.y_dir.get() < 0 {
+            // check for forward/backward movement
+            if self.z_dir.get() < 0 {
                 let new_dir = vec3(dir.x, dir.y, dir.z) * self.movement_speed;
 
                 self.position
                     .set(self.position.get() - new_dir * time_diff as f32);
-            } else if self.y_dir.get() > 0 {
+            } else if self.z_dir.get() > 0 {
                 let new_dir = vec3(dir.x, dir.y, dir.z) * self.movement_speed;
+
+                self.position
+                    .set(self.position.get() + new_dir * time_diff as f32);
+            }
+
+            // check for up/down lift
+            if self.y_dir.get() < 0 {
+                let new_dir = UP * self.movement_speed;
+
+                self.position
+                    .set(self.position.get() - new_dir * time_diff as f32);
+            } else if self.y_dir.get() > 0 {
+                let new_dir = UP * self.movement_speed;
 
                 self.position
                     .set(self.position.get() + new_dir * time_diff as f32);
@@ -123,10 +147,12 @@ impl ViewEmulator {
         match key {
             Keycode::A => self.x_dir.set(self.x_dir.get() - 1),
             Keycode::D => self.x_dir.set(self.x_dir.get() + 1),
-            Keycode::W => self.y_dir.set(self.y_dir.get() + 1),
-            Keycode::S => self.y_dir.set(self.y_dir.get() - 1),
+            Keycode::W => self.z_dir.set(self.z_dir.get() + 1),
+            Keycode::S => self.z_dir.set(self.z_dir.get() - 1),
             Keycode::Q => self.turn_dir.set(self.turn_dir.get() - 1),
             Keycode::E => self.turn_dir.set(self.turn_dir.get() + 1),
+            Keycode::Space => self.y_dir.set(self.y_dir.get() + 1),
+            Keycode::LCtrl => self.y_dir.set(self.y_dir.get() - 1),
             _ => (),
         }
     }
@@ -135,10 +161,12 @@ impl ViewEmulator {
         match key {
             Keycode::A => self.x_dir.set(self.x_dir.get() + 1),
             Keycode::D => self.x_dir.set(self.x_dir.get() - 1),
-            Keycode::W => self.y_dir.set(self.y_dir.get() - 1),
-            Keycode::S => self.y_dir.set(self.y_dir.get() + 1),
+            Keycode::W => self.z_dir.set(self.z_dir.get() - 1),
+            Keycode::S => self.z_dir.set(self.z_dir.get() + 1),
             Keycode::Q => self.turn_dir.set(self.turn_dir.get() + 1),
             Keycode::E => self.turn_dir.set(self.turn_dir.get() - 1),
+            Keycode::Space => self.y_dir.set(self.y_dir.get() - 1),
+            Keycode::LCtrl => self.y_dir.set(self.y_dir.get() + 1),
             _ => (),
         }
     }
