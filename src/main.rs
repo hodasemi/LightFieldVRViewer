@@ -20,6 +20,13 @@ fn main() -> VerboseResult<()> {
             use_util: false,
             verbose: false,
         })
+        .set_window_info(WindowCreateInfo {
+            title: "Light Field Desktop Viewer",
+            width: 1280,
+            height: 720,
+            fullscreen: false,
+            requested_display: None,
+        })
         .enable_vsync()
         .enable_keyboard()
         .set_sample_count(sample_count)
