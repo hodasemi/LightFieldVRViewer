@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use context::prelude::*;
 
 use cgmath::{vec2, vec3, Vector2, Vector3};
@@ -15,6 +17,11 @@ impl ExampleVertex {
             uv: vec2(u, v),
         }
     }
-}
 
-// pub struct ExampleObject {}
+    pub fn pos_vec(position: Vector3<f32>, u: f32, v: f32) -> Self {
+        ExampleVertex {
+            position,
+            uv: vec2(u, v),
+        }
+    }
+}

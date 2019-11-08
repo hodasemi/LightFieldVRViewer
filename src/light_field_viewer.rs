@@ -67,7 +67,7 @@ impl LightFieldViewer {
             view_buffers,
             transform_descriptor,
 
-            view_emulator: ViewEmulator::new(context, Deg(10.0), 0.5),
+            view_emulator: ViewEmulator::new(context, Deg(45.0), 2.5),
 
             light_fields,
 

@@ -4,7 +4,7 @@ use super::config::Config;
 use super::example_object::ExampleVertex;
 use super::light_field_viewer::{DEFAULT_FORWARD, UP};
 
-use cgmath::{Array, InnerSpace};
+use cgmath::{Array, InnerSpace, Vector3};
 
 use std::fs::File;
 use std::io::BufReader;
@@ -16,8 +16,6 @@ use pxm::PFM;
 
 const TEXTURE_WIDTH_M: f32 = 0.2;
 const INTER_IMAGE_GAP_M: f32 = 0.01;
-const X_OFFSET_M: f32 = 0.0;
-const Y_OFFSET_M: f32 = 2.0;
 
 #[derive(Clone, Debug)]
 pub struct AlphaMap {
@@ -32,31 +30,48 @@ pub struct SingleView {
 }
 
 impl SingleView {
-    fn new(image: Arc<Image>, x: u32, y: u32, w: u32, h: u32, z: f32) -> VerboseResult<Self> {
+    fn new(
+        image: Arc<Image>,
+        x: u32,
+        y: u32,
+        config: &Config,
+        plane_center: Vector3<f32>,
+        right: Vector3<f32>,
+        up: Vector3<f32>,
+    ) -> VerboseResult<Self> {
+        let w = config.extrinsics.horizontal_camera_count;
+        let h = config.extrinsics.vertical_camera_count;
+
         // keep images ratio
         let height = (TEXTURE_WIDTH_M * image.width() as f32) / image.height() as f32;
 
         let complete_field_width = TEXTURE_WIDTH_M * w as f32 + INTER_IMAGE_GAP_M * (w - 1) as f32;
         let complete_field_height = height * h as f32 + INTER_IMAGE_GAP_M * (h - 1) as f32;
 
-        let total_left = -(complete_field_width / 2.0);
-        let total_top = complete_field_height / 2.0;
+        let top_left_corner = plane_center - ((complete_field_width / 2.0) * right)
+            + ((complete_field_height / 2.0) * up);
 
-        let left = total_left + ((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32) + X_OFFSET_M;
-        let right = total_left
-            + ((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32)
-            + TEXTURE_WIDTH_M
-            + X_OFFSET_M;
-        let top = total_top - ((height + INTER_IMAGE_GAP_M) * y as f32) + Y_OFFSET_M;
-        let bottom = total_top - ((height + INTER_IMAGE_GAP_M) * y as f32) - height + Y_OFFSET_M;
+        let top_left = top_left_corner
+            + (((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32) * right)
+            - (((height + INTER_IMAGE_GAP_M) * y as f32) * up);
+        let bottom_left = top_left_corner
+            + (((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32) * right)
+            - ((((height + INTER_IMAGE_GAP_M) * y as f32) + height) * up);
+
+        let top_right = top_left_corner
+            + ((((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32) + TEXTURE_WIDTH_M) * right)
+            - (((height + INTER_IMAGE_GAP_M) * y as f32) * up);
+        let bottom_right = top_left_corner
+            + ((((TEXTURE_WIDTH_M + INTER_IMAGE_GAP_M) * x as f32) + TEXTURE_WIDTH_M) * right)
+            - ((((height + INTER_IMAGE_GAP_M) * y as f32) + height) * up);
 
         let data = [
-            ExampleVertex::new(left, top, z, 0.0, 0.0),
-            ExampleVertex::new(left, bottom, z, 0.0, 1.0),
-            ExampleVertex::new(right, bottom, z, 1.0, 1.0),
-            ExampleVertex::new(right, bottom, z, 1.0, 1.0),
-            ExampleVertex::new(right, top, z, 1.0, 0.0),
-            ExampleVertex::new(left, top, z, 0.0, 0.0),
+            ExampleVertex::pos_vec(top_left, 0.0, 0.0),
+            ExampleVertex::pos_vec(bottom_left, 0.0, 1.0),
+            ExampleVertex::pos_vec(bottom_right, 1.0, 1.0),
+            ExampleVertex::pos_vec(bottom_right, 1.0, 1.0),
+            ExampleVertex::pos_vec(top_right, 1.0, 0.0),
+            ExampleVertex::pos_vec(top_left, 0.0, 0.0),
         ];
 
         let device = image.device();
@@ -99,11 +114,6 @@ pub struct LightField {
     pub config: Config,
 
     pub input_images: Vec<Vec<Option<SingleView>>>,
-
-    _debug_image: Arc<Image>,
-    debug_descriptor: Arc<DescriptorSet>,
-    right_buffer: Arc<Buffer<ExampleVertex>>,
-    up_buffer: Arc<Buffer<ExampleVertex>>,
 }
 
 impl LightField {
@@ -113,7 +123,10 @@ impl LightField {
         // let depth_high_resolution = Self::load_depth_pfm(dir, "gt_depth_highres")?;
         // let depth_low_resolution = Self::load_depth_pfm(dir, "gt_depth_lowres")?;
         // let dispersion_high_resolution = Self::load_dispersion_pfm(dir, "gt_disp_highres")?;
-        let dispersion_low_resolution = Self::load_dispersion_pfm(dir, "gt_disp_lowres", 10, 0.5)?;
+        let dispersion_difference = config.meta.disp_min.abs() + config.meta.disp_max.abs();
+
+        let _dispersion_low_resolution =
+            Self::load_dispersion_pfm(dir, "gt_disp_lowres", dispersion_difference as usize, 0.5)?;
 
         let mut input_images = vec![
             vec![None; config.extrinsics.vertical_camera_count as usize];
@@ -174,11 +187,15 @@ impl LightField {
 
         direction.swap_elements(1, 2);
 
-        let right = direction.cross(UP).normalize();
+        let mut up = (config.extrinsics.camera_rotation_matrix() * UP.extend(1.0))
+            .truncate()
+            .normalize();
+
+        up.swap_elements(1, 2);
+
+        let right = direction.cross(up).normalize();
 
         let plane_center = center + direction * config.extrinsics.focus_distance;
-        let plane_right = plane_center + right;
-        let plane_up = plane_center + UP;
 
         for thread in threads {
             let (image, x, y) = thread.join()??;
@@ -187,54 +204,18 @@ impl LightField {
                 image,
                 x as u32,
                 y as u32,
-                config.extrinsics.horizontal_camera_count,
-                config.extrinsics.vertical_camera_count,
-                -1.5,
+                &config,
+                plane_center,
+                right,
+                up,
             )?);
         }
 
         println!("finished loading light field {}", dir);
 
-        let debug_image = Image::from_file("green.png")?
-            .nearest_sampler()
-            .build(context.device(), context.queue())?;
-
-        let descriptor_pool = DescriptorPool::new()
-            .set_layout(Self::descriptor_layout(context.device())?)
-            .build(context.device().clone())?;
-
-        let debug_descriptor = DescriptorPool::prepare_set(&descriptor_pool).allocate()?;
-
-        debug_descriptor.update(&[DescriptorWrite::combined_samplers(0, &[&debug_image])]);
-
-        let right_buffer = Buffer::new()
-            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-            .set_usage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-            .set_data(&[
-                ExampleVertex::new(center.x, center.y, center.z, 0.0, 0.0),
-                ExampleVertex::new(plane_center.x, plane_center.y, plane_center.z, 0.0, 1.0),
-                ExampleVertex::new(plane_right.x, plane_right.y, plane_right.z, 1.0, 1.0),
-            ])
-            .build(context.device().clone())?;
-
-        let up_buffer = Buffer::new()
-            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-            .set_usage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-            .set_data(&[
-                ExampleVertex::new(center.x, center.y, center.z, 0.0, 0.0),
-                ExampleVertex::new(plane_center.x, plane_center.y, plane_center.z, 0.0, 1.0),
-                ExampleVertex::new(plane_up.x, plane_up.y, plane_up.z, 1.0, 1.0),
-            ])
-            .build(context.device().clone())?;
-
         Ok(LightField {
             config,
             input_images,
-
-            _debug_image: debug_image,
-            debug_descriptor,
-            right_buffer,
-            up_buffer,
         })
     }
 
@@ -251,15 +232,6 @@ impl LightField {
             }
         }
 
-        command_buffer
-            .bind_descriptor_sets_minimal(&[&self.debug_descriptor, transform_descriptor])?;
-
-        command_buffer.bind_vertex_buffer(&self.right_buffer);
-        command_buffer.draw_complete_single_instance(self.right_buffer.size() as u32);
-
-        command_buffer.bind_vertex_buffer(&self.up_buffer);
-        command_buffer.draw_complete_single_instance(self.up_buffer.size() as u32);
-
         Ok(())
     }
 
@@ -274,9 +246,9 @@ impl LightField {
             .build(device.clone())?)
     }
 
-    fn load_depth_pfm(dir: &str, file: &str) -> VerboseResult<PFM> {
-        Self::open_pfm_file(&format!("{}/{}.pfm", dir, file))
-    }
+    // fn load_depth_pfm(dir: &str, file: &str) -> VerboseResult<PFM> {
+    //     Self::open_pfm_file(&format!("{}/{}.pfm", dir, file))
+    // }
 
     fn load_dispersion_pfm(
         dir: &str,

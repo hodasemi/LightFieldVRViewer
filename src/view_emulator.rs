@@ -36,7 +36,7 @@ impl ViewEmulator {
     ) -> Self {
         let angle = Deg(0.0);
 
-        let position = Point3::new(0.0, 1.5, 0.0);
+        let position = Point3::new(0.0, 0.0, 0.0);
         let direction = Matrix3::from_axis_angle(UP, angle) * DEFAULT_FORWARD;
 
         let simulation_transform = VRTransformations {
