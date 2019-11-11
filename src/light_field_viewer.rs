@@ -4,7 +4,6 @@ use context::ContextObject;
 use std::cell::RefCell;
 use std::mem;
 use std::ops::Deref;
-use std::slice;
 use std::sync::Arc;
 
 use cgmath::{vec3, vec4, Deg, Vector3};
@@ -249,11 +248,6 @@ impl LightFieldViewer {
         let fragment_shader =
             ShaderModule::new(context.device().clone(), fs, ShaderType::Fragment)?;
 
-        let stages = [
-            vertex_shader.pipeline_stage_info(),
-            fragment_shader.pipeline_stage_info(),
-        ];
-
         match render_targets {
             TargetMode::Single(render_target) => {
                 let pipeline_layout =
@@ -261,10 +255,11 @@ impl LightFieldViewer {
 
                 let pipeline = Self::create_pipeline(
                     context,
-                    &stages,
                     sample_count,
                     render_target.render_pass(),
                     &pipeline_layout,
+                    vertex_shader,
+                    fragment_shader,
                 )?;
 
                 Ok(TargetMode::Single(pipeline))
@@ -275,18 +270,20 @@ impl LightFieldViewer {
 
                 let left_pipeline = Self::create_pipeline(
                     context,
-                    &stages,
                     sample_count,
                     left_render_target.render_pass(),
                     &pipeline_layout,
+                    vertex_shader.clone(),
+                    fragment_shader.clone(),
                 )?;
 
                 let right_pipeline = Self::create_pipeline(
                     context,
-                    &stages,
                     sample_count,
                     right_render_target.render_pass(),
                     &pipeline_layout,
+                    vertex_shader,
+                    fragment_shader,
                 )?;
 
                 Ok(TargetMode::Stereo(left_pipeline, right_pipeline))
@@ -296,18 +293,21 @@ impl LightFieldViewer {
 
     fn create_pipeline(
         context: &Arc<Context>,
-        stages: &[VkPipelineShaderStageCreateInfo],
         sample_count: VkSampleCountFlags,
         render_pass: &Arc<RenderPass>,
         pipeline_layout: &Arc<PipelineLayout>,
+        vertex_shader: Arc<ShaderModule>,
+        fragment_shader: Arc<ShaderModule>,
     ) -> VerboseResult<Arc<Pipeline>> {
-        let input_bindings = [VkVertexInputBindingDescription {
+        let render_core = context.render_core();
+
+        let input_bindings = vec![VkVertexInputBindingDescription {
             binding: 0,
             stride: mem::size_of::<ExampleVertex>() as u32,
             inputRate: VK_VERTEX_INPUT_RATE_VERTEX,
         }];
 
-        let input_attributes = [
+        let input_attributes = vec![
             // position
             VkVertexInputAttributeDescription {
                 location: 0,
@@ -324,129 +324,30 @@ impl LightFieldViewer {
             },
         ];
 
-        let vertex_input_state =
-            VkPipelineVertexInputStateCreateInfo::new(0, &input_bindings, &input_attributes);
-
-        let render_core = context.render_core();
-
-        let viewport = VkViewport {
-            x: 0.0,
-            y: 0.0,
-            width: render_core.width() as f32,
-            height: render_core.height() as f32,
-            minDepth: 0.0,
-            maxDepth: 1.0,
-        };
-        let scissor = VkRect2D {
-            offset: VkOffset2D { x: 0, y: 0 },
-            extent: VkExtent2D {
-                width: render_core.width(),
-                height: render_core.height(),
-            },
-        };
-
-        let viewport = VkPipelineViewportStateCreateInfo::new(
-            VK_PIPELINE_VIEWPORT_STATE_CREATE_NULL_BIT,
-            slice::from_ref(&viewport),
-            slice::from_ref(&scissor),
-        );
-
-        let input_assembly = VkPipelineInputAssemblyStateCreateInfo::new(
-            VK_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_NULL_BIT,
-            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-            false,
-        );
-
-        let multisample = VkPipelineMultisampleStateCreateInfo::new(
-            VK_PIPELINE_MULTISAMPLE_STATE_CREATE_NULL_BIT,
-            sample_count,
-            false,
-            0.0,
-            &[],
-            false,
-            false,
-        );
-
-        let rasterization = VkPipelineRasterizationStateCreateInfo::new(
-            VK_PIPELINE_RASTERIZATION_STATE_CREATE_NULL_BIT,
-            false,
-            false,
-            VK_POLYGON_MODE_FILL,
-            VK_CULL_MODE_NONE,
-            VK_FRONT_FACE_COUNTER_CLOCKWISE,
-            false,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        );
-
-        let color_blend_attachment = VkPipelineColorBlendAttachmentState {
-            blendEnable: VK_TRUE,
-            srcColorBlendFactor: VK_BLEND_FACTOR_ONE,
-            dstColorBlendFactor: VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-            colorBlendOp: VK_BLEND_OP_ADD,
-            srcAlphaBlendFactor: VK_BLEND_FACTOR_ONE,
-            dstAlphaBlendFactor: VK_BLEND_FACTOR_ZERO,
-            alphaBlendOp: VK_BLEND_OP_ADD,
-            colorWriteMask: VK_COLOR_COMPONENT_R_BIT
-                | VK_COLOR_COMPONENT_G_BIT
-                | VK_COLOR_COMPONENT_B_BIT
-                | VK_COLOR_COMPONENT_A_BIT,
-        };
-
-        let color_blend = VkPipelineColorBlendStateCreateInfo::new(
-            VK_PIPELINE_COLOR_BLEND_STATE_CREATE_NULL_BIT,
-            false,
-            VK_LOGIC_OP_NO_OP,
-            slice::from_ref(&color_blend_attachment),
-            [1.0, 1.0, 1.0, 1.0],
-        );
-
-        let stencil_op_state = VkStencilOpState {
-            failOp: VK_STENCIL_OP_KEEP,
-            passOp: VK_STENCIL_OP_KEEP,
-            depthFailOp: VK_STENCIL_OP_KEEP,
-            compareOp: VK_COMPARE_OP_ALWAYS,
-            compareMask: 0,
-            writeMask: 0,
-            reference: 0,
-        };
-
-        let depth_stencil = VkPipelineDepthStencilStateCreateInfo::new(
-            VK_PIPELINE_DEPTH_STENCIL_STATE_CREATE_NULL_BIT,
-            true,
-            true,
-            VK_COMPARE_OP_LESS,
-            false,
-            false,
-            stencil_op_state.clone(),
-            stencil_op_state,
-            0.0,
-            0.0,
-        );
-
-        let pipeline = Pipeline::new_graphics(
-            context.device().clone(),
-            None,
-            0,
-            &stages,
-            Some(vertex_input_state),
-            Some(input_assembly),
-            None,
-            Some(viewport),
-            rasterization,
-            Some(multisample),
-            Some(depth_stencil),
-            Some(color_blend),
-            None,
-            &pipeline_layout,
-            render_pass,
-            0,
-            GraphicsPipelineExtensions {
-                amd_rasterization_order: None,
-            },
-        )?;
+        let pipeline = Pipeline::new_graphics()
+            .set_vertex_shader(vertex_shader, input_bindings, input_attributes)
+            .set_fragment_shader(fragment_shader)
+            .add_viewport(VkViewport {
+                x: 0.0,
+                y: 0.0,
+                width: render_core.width() as f32,
+                height: render_core.height() as f32,
+                minDepth: 0.0,
+                maxDepth: 1.0,
+            })
+            .add_scissor(VkRect2D {
+                offset: VkOffset2D { x: 0, y: 0 },
+                extent: VkExtent2D {
+                    width: render_core.width(),
+                    height: render_core.height(),
+                },
+            })
+            .default_multisample(sample_count)
+            .default_rasterization(VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE)
+            .default_color_blend(vec![VkPipelineColorBlendAttachmentState::default()])
+            .default_depth_stencil(true, false)
+            .input_assembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false)
+            .build(context.device().clone(), pipeline_layout, render_pass, 0)?;
 
         Ok(pipeline)
     }
