@@ -16,6 +16,7 @@ use pxm::PFM;
 
 const TEXTURE_WIDTH_M: f32 = 0.2;
 const INTER_IMAGE_GAP_M: f32 = 0.01;
+const EPSILON: f32 = 0.5;
 
 #[derive(Clone, Debug)]
 pub struct AlphaMap {
@@ -120,14 +121,6 @@ impl LightField {
     pub fn new(context: &Arc<Context>, dir: &str) -> VerboseResult<Self> {
         let config = Config::load(&format!("{}/parameters.cfg", dir))?;
 
-        // let depth_high_resolution = Self::load_depth_pfm(dir, "gt_depth_highres")?;
-        // let depth_low_resolution = Self::load_depth_pfm(dir, "gt_depth_lowres")?;
-        // let disparity_high_resolution = Self::load_dispersion_pfm(dir, "gt_disp_highres")?;
-        let disparity_difference = config.meta.disp_min.abs() + config.meta.disp_max.abs();
-
-        // let _disparity_low_resolution =
-        //     Self::load_disparity_pfm(dir, "gt_disp_lowres", disparity_difference as usize, 0.5)?;
-
         let mut input_images = vec![
             vec![None; config.extrinsics.vertical_camera_count as usize];
             config.extrinsics.horizontal_camera_count as usize
@@ -139,6 +132,7 @@ impl LightField {
         );
 
         let mut total_index = 0;
+        let disparity_difference = config.meta.disp_min.abs() + config.meta.disp_max.abs();
 
         for (x, row) in input_images.iter().enumerate() {
             for (y, _image) in row.iter().enumerate() {
@@ -151,23 +145,34 @@ impl LightField {
                 let dir = dir.to_string();
 
                 threads.push(thread::spawn(move || {
-                    let path = format!("{}/input_Cam{:03}.png", dir, total_index);
+                    let image_path = format!("{}/input_Cam{:03}.png", dir, total_index);
+                    let disparity_path =
+                        format!("{}/gt_disp_lowres_Cam{:03}.pfm", dir, total_index);
 
-                    let image = if Path::new(&path).exists() {
-                        let image = Image::from_file(&path)?
-                            .nearest_sampler()
-                            .build(&device, &queue)?;
+                    // check if image exists
+                    if !Path::new(&image_path).exists() {
+                        create_error!(format!("{} does not exist", image_path));
+                    }
 
-                        // check if texture dimensions match meta information
-                        if image.width() != meta_image_width || image.height() != meta_image_height
-                        {
-                            create_error!(format!("Image ({}) has a not expected extent", path));
-                        }
+                    // check if disparity map exists
+                    if !Path::new(&disparity_path).exists() {
+                        create_error!(format!("{} does not exist", disparity_path));
+                    }
 
-                        image
-                    } else {
-                        create_error!(format!("{} does not exist", path));
-                    };
+                    let alpha_maps = Self::load_disparity_pfm(
+                        &disparity_path,
+                        disparity_difference as usize,
+                        EPSILON,
+                    )?;
+
+                    let image = Image::from_file(&image_path)?
+                        .nearest_sampler()
+                        .build(&device, &queue)?;
+
+                    // check if texture dimensions match meta information
+                    if image.width() != meta_image_width || image.height() != meta_image_height {
+                        create_error!(format!("Image ({}) has a not expected extent", image_path));
+                    }
 
                     Ok((image, x, y))
                 }));
@@ -249,12 +254,11 @@ impl LightField {
     // }
 
     fn load_disparity_pfm(
-        dir: &str,
-        file: &str,
+        path: &str,
         alpha_map_count: usize,
         epsilon: f32,
     ) -> VerboseResult<Vec<AlphaMap>> {
-        let pfm = Self::open_pfm_file(&format!("{}/{}.pfm", dir, file))?;
+        let pfm = Self::open_pfm_file(path)?;
 
         let mut alpha_maps = vec![
             AlphaMap {
