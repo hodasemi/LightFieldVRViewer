@@ -30,7 +30,7 @@ pub struct LightFieldViewer {
 
     sample_count: VkSampleCountFlags,
 
-    coordinate_system: CoordinateSystem,
+    coordinate_systems: RefCell<TargetMode<CoordinateSystem>>,
 }
 
 impl LightFieldViewer {
@@ -59,8 +59,8 @@ impl LightFieldViewer {
             &[desc, &light_field_desc_layout],
         )?;
 
-        let coordinate_system =
-            CoordinateSystem::new(context, sample_count, &render_targets, desc)?;
+        let coordinate_systems =
+            Self::create_coordinate_systems(context, &render_targets, sample_count, desc)?;
 
         Ok(Arc::new(LightFieldViewer {
             context: context.clone(),
@@ -78,7 +78,7 @@ impl LightFieldViewer {
 
             sample_count,
 
-            coordinate_system,
+            coordinate_systems: RefCell::new(coordinate_systems),
         }))
     }
 }
@@ -128,6 +128,7 @@ impl TScene for LightFieldViewer {
             &self.transform_descriptor,
             self.pipelines.try_borrow()?.deref(),
             self.render_targets.try_borrow()?.deref(),
+            self.coordinate_systems.try_borrow()?.deref(),
         ) {
             (
                 TargetMode::Single(index),
@@ -135,6 +136,7 @@ impl TScene for LightFieldViewer {
                 TargetMode::Single(example_descriptor),
                 TargetMode::Single(pipeline),
                 TargetMode::Single(render_target),
+                TargetMode::Single(coordinate_system),
             ) => {
                 Self::render(
                     *index,
@@ -145,7 +147,7 @@ impl TScene for LightFieldViewer {
                     &self.view_emulator.simulation_transform(),
                     example_descriptor,
                     &self.light_fields,
-                    &self.coordinate_system,
+                    coordinate_system,
                 )?;
             }
             (
@@ -154,6 +156,7 @@ impl TScene for LightFieldViewer {
                 TargetMode::Stereo(left_descriptor, right_descriptor),
                 TargetMode::Stereo(left_pipeline, right_pipeline),
                 TargetMode::Stereo(left_render_target, right_render_target),
+                TargetMode::Stereo(left_coordinate_system, right_coordinate_system),
             ) => {
                 let (left_transform, right_transform) = transforms
                     .as_ref()
@@ -169,7 +172,7 @@ impl TScene for LightFieldViewer {
                     left_transform,
                     left_descriptor,
                     &self.light_fields,
-                    &self.coordinate_system,
+                    left_coordinate_system,
                 )?;
 
                 Self::render(
@@ -181,7 +184,7 @@ impl TScene for LightFieldViewer {
                     right_transform,
                     right_descriptor,
                     &self.light_fields,
-                    &self.coordinate_system,
+                    right_coordinate_system,
                 )?;
             }
             _ => create_error!("invalid target mode setup"),
@@ -208,9 +211,17 @@ impl TScene for LightFieldViewer {
             "shader/quad.frag.spv",
             self.sample_count,
             &render_targets,
-            &[&light_field_desc_layout, desc],
+            &[desc, &light_field_desc_layout],
         )?;
 
+        let coordinate_systems = Self::create_coordinate_systems(
+            &self.context,
+            &render_targets,
+            self.sample_count,
+            desc,
+        )?;
+
+        *self.coordinate_systems.try_borrow_mut()? = coordinate_systems;
         *self.render_targets.try_borrow_mut()? = render_targets;
         *self.pipelines.try_borrow_mut()? = pipelines;
 
@@ -362,6 +373,38 @@ impl LightFieldViewer {
             .default_depth_stencil(true, false)
             .input_assembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false)
             .build(context.device().clone(), pipeline_layout, render_pass, 0)
+    }
+
+    fn create_coordinate_systems(
+        context: &Arc<Context>,
+        render_targets: &TargetMode<RenderTarget>,
+        sample_count: VkSampleCountFlags,
+        descriptor: &Arc<DescriptorSet>,
+    ) -> VerboseResult<TargetMode<CoordinateSystem>> {
+        match render_targets {
+            TargetMode::Single(render_target) => Ok(TargetMode::Single(CoordinateSystem::new(
+                context,
+                sample_count,
+                render_target.render_pass(),
+                descriptor,
+            )?)),
+            TargetMode::Stereo(left_render_target, right_render_target) => {
+                let left_cs = CoordinateSystem::new(
+                    context,
+                    sample_count,
+                    left_render_target.render_pass(),
+                    descriptor,
+                )?;
+                let right_cs = CoordinateSystem::new(
+                    context,
+                    sample_count,
+                    right_render_target.render_pass(),
+                    descriptor,
+                )?;
+
+                Ok(TargetMode::Stereo(left_cs, right_cs))
+            }
+        }
     }
 
     fn create_view_buffers(
