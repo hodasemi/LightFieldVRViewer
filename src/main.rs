@@ -1,6 +1,7 @@
 use context::prelude::*;
 
 mod config;
+mod debug;
 mod example_object;
 mod light_field;
 mod light_field_viewer;
@@ -34,7 +35,10 @@ fn main() -> VerboseResult<()> {
         // .set_openxr_json("/usr/share/openxr/1/openxr_monado.json")
         .build()?;
 
-    let light_field = vec![LightField::new(&context, "test_data")?];
+    let light_field = vec![
+        LightField::new(&context, "test_data/lightfield_shot_1")?,
+        LightField::new(&context, "test_data/lightfield_shot_2")?,
+    ];
 
     let light_field_viewer = LightFieldViewer::new(&context, sample_count, light_field)?;
 

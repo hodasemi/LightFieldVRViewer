@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use cgmath::{vec3, vec4, Deg, Vector3};
 
+use super::debug::coordinate_system::CoordinateSystem;
 use super::{example_object::ExampleVertex, light_field::LightField, view_emulator::ViewEmulator};
 
 pub const DEFAULT_FORWARD: Vector3<f32> = vec3(0.0, 0.0, -1.0);
@@ -28,6 +29,8 @@ pub struct LightFieldViewer {
     light_fields: Vec<LightField>,
 
     sample_count: VkSampleCountFlags,
+
+    coordinate_system: CoordinateSystem,
 }
 
 impl LightFieldViewer {
@@ -53,8 +56,11 @@ impl LightFieldViewer {
             "shader/quad.frag.spv",
             sample_count,
             &render_targets,
-            &[&light_field_desc_layout, desc],
+            &[desc, &light_field_desc_layout],
         )?;
+
+        let coordinate_system =
+            CoordinateSystem::new(context, sample_count, &render_targets, desc)?;
 
         Ok(Arc::new(LightFieldViewer {
             context: context.clone(),
@@ -71,6 +77,8 @@ impl LightFieldViewer {
             light_fields,
 
             sample_count,
+
+            coordinate_system,
         }))
     }
 }
@@ -137,6 +145,7 @@ impl TScene for LightFieldViewer {
                     &self.view_emulator.simulation_transform(),
                     example_descriptor,
                     &self.light_fields,
+                    &self.coordinate_system,
                 )?;
             }
             (
@@ -160,6 +169,7 @@ impl TScene for LightFieldViewer {
                     left_transform,
                     left_descriptor,
                     &self.light_fields,
+                    &self.coordinate_system,
                 )?;
 
                 Self::render(
@@ -171,6 +181,7 @@ impl TScene for LightFieldViewer {
                     right_transform,
                     right_descriptor,
                     &self.light_fields,
+                    &self.coordinate_system,
                 )?;
             }
             _ => create_error!("invalid target mode setup"),
@@ -217,6 +228,7 @@ impl LightFieldViewer {
         transform: &VRTransformations,
         descriptor_set: &Arc<DescriptorSet>,
         light_fields: &[LightField],
+        coordinate_system: &CoordinateSystem,
     ) -> VerboseResult<()> {
         {
             let mut mapped = view_buffer.map_complete()?;
@@ -230,6 +242,8 @@ impl LightFieldViewer {
         for light_field in light_fields {
             light_field.render(command_buffer, descriptor_set)?;
         }
+
+        coordinate_system.render(command_buffer, descriptor_set)?;
 
         render_target.end(command_buffer);
 
@@ -324,7 +338,7 @@ impl LightFieldViewer {
             },
         ];
 
-        let pipeline = Pipeline::new_graphics()
+        Pipeline::new_graphics()
             .set_vertex_shader(vertex_shader, input_bindings, input_attributes)
             .set_fragment_shader(fragment_shader)
             .add_viewport(VkViewport {
@@ -347,9 +361,7 @@ impl LightFieldViewer {
             .default_color_blend(vec![VkPipelineColorBlendAttachmentState::default()])
             .default_depth_stencil(true, false)
             .input_assembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false)
-            .build(context.device().clone(), pipeline_layout, render_pass, 0)?;
-
-        Ok(pipeline)
+            .build(context.device().clone(), pipeline_layout, render_pass, 0)
     }
 
     fn create_view_buffers(

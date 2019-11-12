@@ -102,7 +102,7 @@ impl SingleView {
         command_buffer: &Arc<CommandBuffer>,
         transform_descriptor: &Arc<DescriptorSet>,
     ) -> VerboseResult<()> {
-        command_buffer.bind_descriptor_sets_minimal(&[&self.descriptor, transform_descriptor])?;
+        command_buffer.bind_descriptor_sets_minimal(&[transform_descriptor, &self.descriptor])?;
         command_buffer.bind_vertex_buffer(&self.buffer);
         command_buffer.draw_complete_single_instance(self.buffer.size() as u32);
 
