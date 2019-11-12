@@ -122,11 +122,11 @@ impl LightField {
 
         // let depth_high_resolution = Self::load_depth_pfm(dir, "gt_depth_highres")?;
         // let depth_low_resolution = Self::load_depth_pfm(dir, "gt_depth_lowres")?;
-        // let dispersion_high_resolution = Self::load_dispersion_pfm(dir, "gt_disp_highres")?;
-        let dispersion_difference = config.meta.disp_min.abs() + config.meta.disp_max.abs();
+        // let disparity_high_resolution = Self::load_dispersion_pfm(dir, "gt_disp_highres")?;
+        let disparity_difference = config.meta.disp_min.abs() + config.meta.disp_max.abs();
 
-        let _dispersion_low_resolution =
-            Self::load_dispersion_pfm(dir, "gt_disp_lowres", dispersion_difference as usize, 0.5)?;
+        // let _disparity_low_resolution =
+        //     Self::load_disparity_pfm(dir, "gt_disp_lowres", disparity_difference as usize, 0.5)?;
 
         let mut input_images = vec![
             vec![None; config.extrinsics.vertical_camera_count as usize];
@@ -177,21 +177,19 @@ impl LightField {
         }
 
         // swap y and z coordinates
-        let mut center = config.extrinsics.camera_center;
-        center.swap_elements(1, 2);
+        let center = Self::swap_axis(config.extrinsics.camera_center);
 
-        let mut direction = (config.extrinsics.camera_rotation_matrix()
-            * DEFAULT_FORWARD.extend(1.0))
-        .truncate()
-        .normalize();
+        let direction = Self::swap_axis(
+            (config.extrinsics.camera_rotation_matrix() * DEFAULT_FORWARD.extend(1.0))
+                .truncate()
+                .normalize(),
+        );
 
-        direction.swap_elements(1, 2);
-
-        let mut up = (config.extrinsics.camera_rotation_matrix() * UP.extend(1.0))
-            .truncate()
-            .normalize();
-
-        up.swap_elements(1, 2);
+        let up = Self::swap_axis(
+            (config.extrinsics.camera_rotation_matrix() * UP.extend(1.0))
+                .truncate()
+                .normalize(),
+        );
 
         let right = direction.cross(up).normalize();
 
@@ -250,7 +248,7 @@ impl LightField {
     //     Self::open_pfm_file(&format!("{}/{}.pfm", dir, file))
     // }
 
-    fn load_dispersion_pfm(
+    fn load_disparity_pfm(
         dir: &str,
         file: &str,
         alpha_map_count: usize,
@@ -285,5 +283,13 @@ impl LightField {
         let mut pfm_bufreader = BufReader::new(pfm_file);
 
         Ok(PFM::read_from(&mut pfm_bufreader)?)
+    }
+
+    #[inline]
+    fn swap_axis(mut v: Vector3<f32>) -> Vector3<f32> {
+        v.swap_elements(1, 2);
+        v.z = -v.z;
+
+        v
     }
 }

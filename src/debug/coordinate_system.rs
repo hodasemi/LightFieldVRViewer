@@ -139,23 +139,23 @@ impl CoordinateSystem {
             .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
             .set_usage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
             .set_data(&[
-                // normal in x direction, green
+                // normal in x direction, red
                 CoordinateVertex {
                     position: vec3(0.0, 0.0, 0.0),
-                    color: vec3(0.0, 1.0, 0.0),
+                    color: vec3(1.0, 0.0, 0.0),
                 },
                 CoordinateVertex {
                     position: vec3(1.0, 0.0, 0.0),
-                    color: vec3(0.0, 1.0, 0.0),
+                    color: vec3(1.0, 0.0, 0.0),
                 },
-                // normal in y direction, red
+                // normal in y direction, green
                 CoordinateVertex {
                     position: vec3(0.0, 0.0, 0.0),
-                    color: vec3(1.0, 0.0, 0.0),
+                    color: vec3(0.0, 1.0, 0.0),
                 },
                 CoordinateVertex {
                     position: vec3(0.0, 1.0, 0.0),
-                    color: vec3(1.0, 0.0, 0.0),
+                    color: vec3(0.0, 1.0, 0.0),
                 },
                 // normal in z direction, blue
                 CoordinateVertex {
