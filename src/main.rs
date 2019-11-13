@@ -37,7 +37,7 @@ fn main() -> VerboseResult<()> {
 
     let light_field = vec![
         LightField::new(&context, "data/shot_01")?,
-        LightField::new(&context, "data/shot_02")?,
+        // LightField::new(&context, "data/shot_02")?,
     ];
 
     let light_field_viewer = LightFieldViewer::new(&context, sample_count, light_field)?;

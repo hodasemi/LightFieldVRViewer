@@ -235,7 +235,7 @@ impl LightField {
                     }
 
                     let mut images = Vec::with_capacity(alpha_maps.len());
-                    let mut layer = 0;
+                    let mut layer: usize = 0;
 
                     for alpha_map in alpha_maps {
                         let mut target_image: ImageBuffer<Rgba<u8>, Vec<u8>> =
@@ -250,14 +250,14 @@ impl LightField {
                         for (x, row) in alpha_map.data.iter().enumerate() {
                             for (y, alpha_value) in row.iter().enumerate() {
                                 // if *alpha_value {
-                                // target_image[(x as u32, y as u32)] =
-                                //     image_data[(x as u32, y as u32)];
+                                //     target_image[(x as u32, y as u32)] =
+                                //         image_data[(x as u32, y as u32)];
 
-                                // found_value = true;
+                                //     found_value = true;
+                                // }
 
                                 target_image[(x as u32, y as u32)] =
-                                    Rgba::from_channels(255, 0, 0, 255);
-                                // }
+                                    Rgba::from_channels((10 + layer as u8 * 10) % 255, 50, 50, 255);
                             }
                         }
 

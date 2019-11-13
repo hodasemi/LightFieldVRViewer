@@ -5,6 +5,8 @@ use std::sync::Arc;
 
 use cgmath::{vec3, Vector3};
 
+const AXIS_LENGTH: f32 = 5.0;
+
 #[derive(Clone, Copy, Debug)]
 struct CoordinateVertex {
     position: Vector3<f32>,
@@ -145,7 +147,7 @@ impl CoordinateSystem {
                     color: vec3(1.0, 0.0, 0.0),
                 },
                 CoordinateVertex {
-                    position: vec3(1.0, 0.0, 0.0),
+                    position: vec3(AXIS_LENGTH, 0.0, 0.0),
                     color: vec3(1.0, 0.0, 0.0),
                 },
                 // normal in y direction, green
@@ -154,7 +156,7 @@ impl CoordinateSystem {
                     color: vec3(0.0, 1.0, 0.0),
                 },
                 CoordinateVertex {
-                    position: vec3(0.0, 1.0, 0.0),
+                    position: vec3(0.0, AXIS_LENGTH, 0.0),
                     color: vec3(0.0, 1.0, 0.0),
                 },
                 // normal in z direction, blue
@@ -163,7 +165,7 @@ impl CoordinateSystem {
                     color: vec3(0.0, 0.0, 1.0),
                 },
                 CoordinateVertex {
-                    position: vec3(0.0, 0.0, 1.0),
+                    position: vec3(0.0, 0.0, AXIS_LENGTH),
                     color: vec3(0.0, 0.0, 1.0),
                 },
             ])
