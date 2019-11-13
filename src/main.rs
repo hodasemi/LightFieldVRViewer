@@ -22,7 +22,7 @@ fn main() -> VerboseResult<()> {
             verbose: false,
         })
         .set_window_info(WindowCreateInfo {
-            title: "Light Field Desktop Viewer",
+            title: "Light Field Desktop Viewer".to_string(),
             width: 1280,
             height: 720,
             fullscreen: false,
