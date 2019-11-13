@@ -414,19 +414,19 @@ impl LightFieldViewer {
 
         match render_core.images() {
             TargetMode::Single(_) => Ok(TargetMode::Single(
-                Buffer::new()
+                Buffer::builder()
                     .set_usage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
                     .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
                     .set_size(1)
                     .build(context.device().clone())?,
             )),
             TargetMode::Stereo(_, _) => Ok(TargetMode::Stereo(
-                Buffer::new()
+                Buffer::builder()
                     .set_usage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
                     .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
                     .set_size(1)
                     .build(context.device().clone())?,
-                Buffer::new()
+                Buffer::builder()
                     .set_usage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
                     .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
                     .set_size(1)
@@ -439,7 +439,7 @@ impl LightFieldViewer {
         context: &Arc<Context>,
         view_buffers: &TargetMode<Arc<Buffer<VRTransformations>>>,
     ) -> VerboseResult<TargetMode<Arc<DescriptorSet>>> {
-        let descriptor_layout = DescriptorSetLayout::new()
+        let descriptor_layout = DescriptorSetLayout::builder()
             .add_layout_binding(
                 0,
                 VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -476,7 +476,7 @@ impl LightFieldViewer {
         device: &Arc<Device>,
         layout: &Arc<DescriptorSetLayout>,
     ) -> VerboseResult<Arc<DescriptorSet>> {
-        let descriptor_pool = DescriptorPool::new()
+        let descriptor_pool = DescriptorPool::builder()
             .set_layout(layout.clone())
             .build(device.clone())?;
 

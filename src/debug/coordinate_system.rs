@@ -135,7 +135,7 @@ impl CoordinateSystem {
     fn create_vertex_buffer(
         context: &Arc<Context>,
     ) -> VerboseResult<Arc<Buffer<CoordinateVertex>>> {
-        Buffer::new()
+        Buffer::builder()
             .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
             .set_usage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
             .set_data(&[

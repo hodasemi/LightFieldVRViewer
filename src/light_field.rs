@@ -78,13 +78,13 @@ impl SingleView {
 
         let device = image.device();
 
-        let buffer = Buffer::new()
+        let buffer = Buffer::builder()
             .set_usage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
             .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
             .set_data(&data)
             .build(device.clone())?;
 
-        let descriptor_pool = DescriptorPool::new()
+        let descriptor_pool = DescriptorPool::builder()
             .set_layout(LightField::descriptor_layout(device)?)
             .build(device.clone())?;
 
@@ -346,7 +346,7 @@ impl LightField {
     }
 
     pub fn descriptor_layout(device: &Arc<Device>) -> VerboseResult<Arc<DescriptorSetLayout>> {
-        Ok(DescriptorSetLayout::new()
+        Ok(DescriptorSetLayout::builder()
             .add_layout_binding(
                 0,
                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
