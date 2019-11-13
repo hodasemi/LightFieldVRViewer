@@ -490,7 +490,7 @@ impl LightFieldViewer {
         match images {
             TargetMode::Single(images) => {
                 let render_target = RenderTarget::new(render_core.width(), render_core.height())
-                    .set_prepared_targets(&images, 0, vec4(0.0, 0.0, 0.0, 1.0))
+                    .set_prepared_targets(&images, 0, vec4(0.2, 0.2, 0.2, 1.0))
                     .add_target_info(CustomTarget::depth())
                     .build(context.device(), context.queue())?;
 

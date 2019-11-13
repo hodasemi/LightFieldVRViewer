@@ -1,4 +1,5 @@
 use context::prelude::*;
+use image::{ImageBuffer, Pixel, Rgba};
 
 use super::config::Config;
 use super::example_object::ExampleVertex;
@@ -15,16 +16,16 @@ use std::thread;
 use pxm::PFM;
 
 const TEXTURE_WIDTH_M: f32 = 0.2;
-const INTER_IMAGE_GAP_M: f32 = 0.01;
+const INTER_IMAGE_GAP_M: f32 = 0.03;
 const EPSILON: f32 = 0.5;
 
 #[derive(Clone, Debug)]
-pub struct AlphaMap {
+struct AlphaMap {
     data: Vec<Vec<bool>>,
 }
 
 #[derive(Clone, Debug)]
-pub struct SingleView {
+struct SingleView {
     image: Arc<Image>,
     descriptor: Arc<DescriptorSet>,
     buffer: Arc<Buffer<ExampleVertex>>,
@@ -111,10 +112,63 @@ impl SingleView {
     }
 }
 
+#[derive(Debug, Clone)]
+struct SingleViewLayer {
+    views: Vec<SingleView>,
+}
+
+impl SingleViewLayer {
+    fn new(
+        images: Vec<(Arc<Image>, usize)>,
+        x: u32,
+        y: u32,
+        config: &Config,
+        plane_center: Vector3<f32>,
+        direction: Vector3<f32>,
+        right: Vector3<f32>,
+        up: Vector3<f32>,
+    ) -> VerboseResult<Self> {
+        let image_count = images.len();
+        let start = image_count / 2;
+
+        let mut views = Vec::with_capacity(images.len());
+
+        for (image, layer) in images.iter() {
+            let direction_offset =
+                ((*layer as f32 * TEXTURE_WIDTH_M) - (start as f32 * TEXTURE_WIDTH_M)) * direction;
+            let single_view_plane_center = plane_center + direction_offset;
+
+            views.push(SingleView::new(
+                image.clone(),
+                x,
+                y,
+                config,
+                single_view_plane_center,
+                right,
+                up,
+            )?);
+        }
+
+        Ok(SingleViewLayer { views })
+    }
+
+    fn render(
+        &self,
+        command_buffer: &Arc<CommandBuffer>,
+        transform_descriptor: &Arc<DescriptorSet>,
+    ) -> VerboseResult<()> {
+        for view in self.views.iter() {
+            view.render(command_buffer, transform_descriptor)?;
+        }
+
+        Ok(())
+    }
+}
+
 pub struct LightField {
     pub config: Config,
 
-    pub input_images: Vec<Vec<Option<SingleView>>>,
+    input_images: Vec<Vec<Option<SingleViewLayer>>>,
 }
 
 impl LightField {
@@ -165,16 +219,68 @@ impl LightField {
                         EPSILON,
                     )?;
 
-                    let image = Image::from_file(&image_path)?
-                        .nearest_sampler()
-                        .build(&device, &queue)?;
+                    let image_data = match image::open(&image_path) {
+                        Ok(tex) => tex.to_rgba(),
+                        Err(err) => create_error!(format!(
+                            "error loading image (\"{}\"): {}",
+                            image_path, err
+                        )),
+                    };
 
                     // check if texture dimensions match meta information
-                    if image.width() != meta_image_width || image.height() != meta_image_height {
+                    if image_data.width() != meta_image_width
+                        || image_data.height() != meta_image_height
+                    {
                         create_error!(format!("Image ({}) has a not expected extent", image_path));
                     }
 
-                    Ok((image, x, y))
+                    let mut images = Vec::with_capacity(alpha_maps.len());
+                    let mut layer = 0;
+
+                    for alpha_map in alpha_maps {
+                        let mut target_image: ImageBuffer<Rgba<u8>, Vec<u8>> =
+                            ImageBuffer::from_pixel(
+                                image_data.width(),
+                                image_data.height(),
+                                Rgba::from_channels(0, 0, 0, 0),
+                            );
+
+                        let mut found_value = false;
+
+                        for (x, row) in alpha_map.data.iter().enumerate() {
+                            for (y, alpha_value) in row.iter().enumerate() {
+                                // if *alpha_value {
+                                // target_image[(x as u32, y as u32)] =
+                                //     image_data[(x as u32, y as u32)];
+
+                                // found_value = true;
+
+                                target_image[(x as u32, y as u32)] =
+                                    Rgba::from_channels(255, 0, 0, 255);
+                                // }
+                            }
+                        }
+
+                        // if !found_value {
+                        //     layer += 1;
+                        //     continue;
+                        // }
+
+                        let image = Image::from_raw(
+                            target_image.into_raw(),
+                            image_data.width(),
+                            image_data.height(),
+                        )
+                        .format(VK_FORMAT_R8G8B8A8_UNORM)
+                        .nearest_sampler()
+                        .build(&device, &queue)?;
+
+                        images.push((image, layer));
+
+                        layer += 1;
+                    }
+
+                    Ok((images, x, y))
                 }));
 
                 total_index += 1;
@@ -201,14 +307,15 @@ impl LightField {
         let plane_center = center + direction * config.extrinsics.focus_distance;
 
         for thread in threads {
-            let (image, x, y) = thread.join()??;
+            let (images, x, y) = thread.join()??;
 
-            input_images[x][y] = Some(SingleView::new(
-                image,
+            input_images[x][y] = Some(SingleViewLayer::new(
+                images,
                 x as u32,
                 y as u32,
                 &config,
                 plane_center,
+                direction,
                 right,
                 up,
             )?);
