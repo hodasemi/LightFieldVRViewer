@@ -1,7 +1,7 @@
 use context::prelude::*;
 use context::ContextObject;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::mem;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -31,6 +31,9 @@ pub struct LightFieldViewer {
     sample_count: VkSampleCountFlags,
 
     coordinate_systems: RefCell<TargetMode<CoordinateSystem>>,
+
+    last_time_stemp: Cell<f64>,
+    fps_count: Cell<u32>,
 }
 
 impl LightFieldViewer {
@@ -79,6 +82,9 @@ impl LightFieldViewer {
             sample_count,
 
             coordinate_systems: RefCell::new(coordinate_systems),
+
+            last_time_stemp: Cell::new(context.time()),
+            fps_count: Cell::new(0),
         }))
     }
 }
@@ -113,6 +119,16 @@ impl ContextObject for LightFieldViewer {
 
 impl TScene for LightFieldViewer {
     fn update(&self) -> VerboseResult<()> {
+        let current_time_stemp = self.context.time();
+        self.fps_count.set(self.fps_count.get() + 1);
+
+        if (current_time_stemp - self.last_time_stemp.get()) >= 1.0 {
+            self.last_time_stemp.set(self.last_time_stemp.get() + 1.0);
+
+            println!("fps: {}", self.fps_count.get());
+            self.fps_count.set(0);
+        }
+
         Ok(())
     }
 
