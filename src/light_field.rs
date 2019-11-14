@@ -249,33 +249,32 @@ impl LightField {
 
                         for (x, row) in alpha_map.data.iter().enumerate() {
                             for (y, alpha_value) in row.iter().enumerate() {
-                                // if *alpha_value {
-                                //     target_image[(x as u32, y as u32)] =
-                                //         image_data[(x as u32, y as u32)];
+                                if *alpha_value {
+                                    target_image[(x as u32, y as u32)] =
+                                        image_data[(x as u32, y as u32)];
 
-                                //     found_value = true;
-                                // }
+                                    found_value = true;
+                                } else {
+                                    target_image[(x as u32, y as u32)] =
+                                        Rgba::from_channels(255, 0, 0, 255);
 
-                                target_image[(x as u32, y as u32)] =
-                                    Rgba::from_channels((10 + layer as u8 * 10) % 255, 50, 50, 255);
+                                    found_value = true;
+                                }
                             }
                         }
 
-                        // if !found_value {
-                        //     layer += 1;
-                        //     continue;
-                        // }
+                        if found_value {
+                            let image = Image::from_raw(
+                                target_image.into_raw(),
+                                image_data.width(),
+                                image_data.height(),
+                            )
+                            .format(VK_FORMAT_R8G8B8A8_UNORM)
+                            .nearest_sampler()
+                            .build(&device, &queue)?;
 
-                        let image = Image::from_raw(
-                            target_image.into_raw(),
-                            image_data.width(),
-                            image_data.height(),
-                        )
-                        .format(VK_FORMAT_R8G8B8A8_UNORM)
-                        .nearest_sampler()
-                        .build(&device, &queue)?;
-
-                        images.push((image, layer));
+                            images.push((image, layer));
+                        }
 
                         layer += 1;
                     }
@@ -375,11 +374,11 @@ impl LightField {
         ];
 
         for (index, disp_data) in pfm.data.iter().enumerate() {
-            let x = (index as f32 / pfm.height as f32).floor() as usize;
-            let y = index - (x * pfm.height);
+            let y = (index as f32 / pfm.height as f32).floor() as usize;
+            let x = index - (y * pfm.height);
 
             for (disparity, alpha_map) in alpha_maps.iter_mut().enumerate() {
-                if (disp_data - disparity as f32).abs() <= epsilon {
+                if (disp_data.abs() - disparity as f32).abs() <= epsilon {
                     alpha_map.data[x][y] = true;
                 }
             }
