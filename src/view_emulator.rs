@@ -13,6 +13,8 @@ pub struct ViewEmulator {
     position: Cell<Point3<f32>>,
     direction: Cell<Deg<f32>>,
 
+    slow_mode: Cell<bool>,
+
     x_dir: Cell<i32>,
     y_dir: Cell<i32>,
     z_dir: Cell<i32>,
@@ -55,6 +57,8 @@ impl ViewEmulator {
             position: Cell::new(position),
             direction: Cell::new(angle),
 
+            slow_mode: Cell::new(false),
+
             x_dir: Cell::new(0),
             y_dir: Cell::new(0),
             z_dir: Cell::new(0),
@@ -82,22 +86,22 @@ impl ViewEmulator {
             // check for rotation
             if self.turn_dir.get() < 0 {
                 self.direction
-                    .set(self.direction.get() + self.turn_speed * time_diff as f32);
+                    .set(self.direction.get() + self.turn_speed() * time_diff as f32);
             } else if self.turn_dir.get() > 0 {
                 self.direction
-                    .set(self.direction.get() - self.turn_speed * time_diff as f32);
+                    .set(self.direction.get() - self.turn_speed() * time_diff as f32);
             }
 
             let dir = self.direction();
 
             // check for left/right movement
             if self.x_dir.get() < 0 {
-                let left_dir = vec3(dir.z, dir.y, -dir.x) * self.movement_speed;
+                let left_dir = vec3(dir.z, dir.y, -dir.x) * self.movement_speed();
 
                 self.position
                     .set(self.position.get() + left_dir * time_diff as f32);
             } else if self.x_dir.get() > 0 {
-                let right_dir = vec3(-dir.z, dir.y, dir.x) * self.movement_speed;
+                let right_dir = vec3(-dir.z, dir.y, dir.x) * self.movement_speed();
 
                 self.position
                     .set(self.position.get() + right_dir * time_diff as f32);
@@ -105,12 +109,12 @@ impl ViewEmulator {
 
             // check for forward/backward movement
             if self.z_dir.get() < 0 {
-                let new_dir = vec3(dir.x, dir.y, dir.z) * self.movement_speed;
+                let new_dir = vec3(dir.x, dir.y, dir.z) * self.movement_speed();
 
                 self.position
                     .set(self.position.get() - new_dir * time_diff as f32);
             } else if self.z_dir.get() > 0 {
-                let new_dir = vec3(dir.x, dir.y, dir.z) * self.movement_speed;
+                let new_dir = vec3(dir.x, dir.y, dir.z) * self.movement_speed();
 
                 self.position
                     .set(self.position.get() + new_dir * time_diff as f32);
@@ -118,12 +122,12 @@ impl ViewEmulator {
 
             // check for up/down lift
             if self.y_dir.get() < 0 {
-                let new_dir = UP * self.movement_speed;
+                let new_dir = UP * self.movement_speed();
 
                 self.position
                     .set(self.position.get() - new_dir * time_diff as f32);
             } else if self.y_dir.get() > 0 {
-                let new_dir = UP * self.movement_speed;
+                let new_dir = UP * self.movement_speed();
 
                 self.position
                     .set(self.position.get() + new_dir * time_diff as f32);
@@ -153,6 +157,7 @@ impl ViewEmulator {
             Keycode::E => self.turn_dir.set(self.turn_dir.get() + 1),
             Keycode::Space => self.y_dir.set(self.y_dir.get() + 1),
             Keycode::LCtrl => self.y_dir.set(self.y_dir.get() - 1),
+            Keycode::LShift => self.slow_mode.set(true),
             _ => (),
         }
     }
@@ -167,6 +172,7 @@ impl ViewEmulator {
             Keycode::E => self.turn_dir.set(self.turn_dir.get() - 1),
             Keycode::Space => self.y_dir.set(self.y_dir.get() - 1),
             Keycode::LCtrl => self.y_dir.set(self.y_dir.get() + 1),
+            Keycode::LShift => self.slow_mode.set(false),
             _ => (),
         }
     }
@@ -185,6 +191,24 @@ impl ViewEmulator {
 
     pub fn simulation_transform(&self) -> VRTransformations {
         self.simulation_transform.get()
+    }
+
+    #[inline]
+    fn movement_speed(&self) -> f32 {
+        if self.slow_mode.get() {
+            self.movement_speed * 0.25
+        } else {
+            self.movement_speed
+        }
+    }
+
+    #[inline]
+    fn turn_speed(&self) -> Deg<f32> {
+        if self.slow_mode.get() {
+            self.turn_speed * 0.25
+        } else {
+            self.turn_speed
+        }
     }
 
     #[inline]
