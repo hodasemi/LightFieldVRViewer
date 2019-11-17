@@ -22,7 +22,7 @@ pub struct Extrinsic {
     pub vertical_camera_count: u32,
 
     /// in millimeters
-    pub baseline: f32,
+    baseline: f32,
 
     /// in meters
     pub focus_distance: f32,
@@ -99,6 +99,11 @@ impl Extrinsic {
         Matrix4::from_angle_z(self.camera_rotation.z)
             * Matrix4::from_angle_y(self.camera_rotation.y)
             * Matrix4::from_angle_x(self.camera_rotation.x)
+    }
+
+    // baseline in meters
+    pub fn baseline(&self) -> f32 {
+        self.baseline * 0.001
     }
 }
 

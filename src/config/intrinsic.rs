@@ -11,7 +11,7 @@ const FSTOP: &str = "fstop";
 #[derive(Debug, PartialEq)]
 pub struct Intrinsic {
     /// in millimeters
-    pub focal_length: f32,
+    focal_length: f32,
 
     /// in pixels
     pub image_width: u32,
@@ -20,9 +20,9 @@ pub struct Intrinsic {
     pub image_height: u32,
 
     /// in millimeters
-    pub sensor_size: f32,
+    sensor_size: f32,
 
-    pub fstop: f32,
+    fstop: f32,
 }
 
 impl Intrinsic {
@@ -50,5 +50,20 @@ impl Intrinsic {
 
             fstop: data.get(FSTOP).ok_or("fstop not present")?.to_value()?,
         })
+    }
+
+    // focal length in meter
+    pub fn focal_length(&self) -> f32 {
+        self.focal_length * 0.001
+    }
+
+    // sensor size in meter
+    pub fn sensor_size(&self) -> f32 {
+        self.sensor_size * 0.001
+    }
+
+    // fstop in meter
+    pub fn fstop(&self) -> f32 {
+        self.fstop * 0.001
     }
 }

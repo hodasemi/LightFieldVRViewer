@@ -7,6 +7,8 @@ mod light_field;
 mod light_field_viewer;
 mod view_emulator;
 
+mod light_field_frustum;
+
 use light_field::LightField;
 use light_field_viewer::LightFieldViewer;
 
