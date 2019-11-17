@@ -1,4 +1,4 @@
-mod light_field_frustum;
+pub mod light_field_frustum;
 mod single_view;
 
 use context::prelude::*;
@@ -34,7 +34,7 @@ pub struct LightField {
 }
 
 impl LightField {
-    pub fn new(context: &Arc<Context>, dir: &str) -> VerboseResult<Self> {
+    pub fn new(context: &Arc<Context>, dir: &str) -> VerboseResult<(Self, Vec<LightFieldFrustum>)> {
         let config = Config::load(&format!("{}/parameters.cfg", dir))?;
 
         let mut input_images = vec![
@@ -197,10 +197,13 @@ impl LightField {
 
         println!("finished loading light field {}", dir);
 
-        Ok(LightField {
-            config,
-            input_images,
-        })
+        Ok((
+            LightField {
+                config,
+                input_images,
+            },
+            frustums,
+        ))
     }
 
     pub fn render(

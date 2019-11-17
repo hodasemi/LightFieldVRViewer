@@ -7,9 +7,9 @@ use cgmath::{InnerSpace, Vector3};
 use crate::config::Config;
 
 #[derive(Debug)]
-struct Line {
-    center: Vector3<f32>,
-    direction: Vector3<f32>,
+pub struct Line {
+    pub center: Vector3<f32>,
+    pub direction: Vector3<f32>,
 }
 
 impl Line {
@@ -25,10 +25,10 @@ impl Line {
 pub struct LightFieldFrustum {
     position: (usize, usize),
 
-    left_top: Line,
-    left_bottom: Line,
-    right_top: Line,
-    right_bottom: Line,
+    pub left_top: Line,
+    pub left_bottom: Line,
+    pub right_top: Line,
+    pub right_bottom: Line,
 }
 
 impl LightFieldFrustum {

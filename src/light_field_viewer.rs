@@ -8,8 +8,12 @@ use std::sync::Arc;
 
 use cgmath::{vec3, vec4, Deg, Vector3};
 
-use super::debug::coordinate_system::CoordinateSystem;
-use super::{example_object::ExampleVertex, light_field::LightField, view_emulator::ViewEmulator};
+use super::debug::{coordinate_system::CoordinateSystem, frustums::FrustumRenderer};
+use super::{
+    example_object::ExampleVertex,
+    light_field::{light_field_frustum::LightFieldFrustum, LightField},
+    view_emulator::ViewEmulator,
+};
 
 pub const DEFAULT_FORWARD: Vector3<f32> = vec3(0.0, 0.0, -1.0);
 pub const UP: Vector3<f32> = vec3(0.0, 1.0, 0.0);
@@ -30,7 +34,9 @@ pub struct LightFieldViewer {
 
     sample_count: VkSampleCountFlags,
 
+    // debugging
     coordinate_systems: RefCell<TargetMode<CoordinateSystem>>,
+    frustum_renderers: RefCell<TargetMode<FrustumRenderer>>,
 
     last_time_stemp: Cell<f64>,
     fps_count: Cell<u32>,
@@ -41,6 +47,7 @@ impl LightFieldViewer {
         context: &Arc<Context>,
         sample_count: VkSampleCountFlags,
         light_fields: Vec<LightField>,
+        frustums: Vec<LightFieldFrustum>,
     ) -> VerboseResult<Arc<Self>> {
         let view_buffers = Self::create_view_buffers(context)?;
 
@@ -65,6 +72,14 @@ impl LightFieldViewer {
         let coordinate_systems =
             Self::create_coordinate_systems(context, &render_targets, sample_count, desc)?;
 
+        let frustum_renderers = Self::create_frustum_renderers(
+            context,
+            &render_targets,
+            sample_count,
+            desc,
+            &frustums,
+        )?;
+
         Ok(Arc::new(LightFieldViewer {
             context: context.clone(),
 
@@ -82,6 +97,7 @@ impl LightFieldViewer {
             sample_count,
 
             coordinate_systems: RefCell::new(coordinate_systems),
+            frustum_renderers: RefCell::new(frustum_renderers),
 
             last_time_stemp: Cell::new(context.time()),
             fps_count: Cell::new(0),
@@ -419,6 +435,42 @@ impl LightFieldViewer {
                 )?;
 
                 Ok(TargetMode::Stereo(left_cs, right_cs))
+            }
+        }
+    }
+
+    fn create_frustum_renderers(
+        context: &Arc<Context>,
+        render_targets: &TargetMode<RenderTarget>,
+        sample_count: VkSampleCountFlags,
+        descriptor: &Arc<DescriptorSet>,
+        frustums: &[LightFieldFrustum],
+    ) -> VerboseResult<TargetMode<FrustumRenderer>> {
+        match render_targets {
+            TargetMode::Single(render_target) => Ok(TargetMode::Single(FrustumRenderer::new(
+                context,
+                sample_count,
+                render_target.render_pass(),
+                descriptor,
+                frustums,
+            )?)),
+            TargetMode::Stereo(left_render_target, right_render_target) => {
+                let left_fr = FrustumRenderer::new(
+                    context,
+                    sample_count,
+                    left_render_target.render_pass(),
+                    descriptor,
+                    frustums,
+                )?;
+                let right_fr = FrustumRenderer::new(
+                    context,
+                    sample_count,
+                    right_render_target.render_pass(),
+                    descriptor,
+                    frustums,
+                )?;
+
+                Ok(TargetMode::Stereo(left_fr, right_fr))
             }
         }
     }
