@@ -7,8 +7,6 @@ mod light_field;
 mod light_field_viewer;
 mod view_emulator;
 
-mod light_field_frustum;
-
 use light_field::LightField;
 use light_field_viewer::LightFieldViewer;
 
@@ -30,7 +28,7 @@ fn main() -> VerboseResult<()> {
             fullscreen: false,
             requested_display: None,
         })
-        .enable_vsync()
+        // .enable_vsync()
         .enable_keyboard()
         .set_sample_count(sample_count)
         // .set_vr_mode(VRMode::OpenVR)
