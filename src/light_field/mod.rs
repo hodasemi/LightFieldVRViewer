@@ -175,8 +175,7 @@ impl LightField {
 
         let plane_center = center + direction * config.extrinsics.focus_distance;
 
-        let frustums =
-            LightFieldFrustum::create_frustums(plane_center, direction, up, right, &config);
+        let frustums = LightFieldFrustum::create_frustums(center, direction, up, right, &config);
 
         let mut images = Vec::with_capacity(threads.len());
 

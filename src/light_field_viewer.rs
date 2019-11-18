@@ -31,6 +31,7 @@ pub struct LightFieldViewer {
     view_emulator: ViewEmulator,
 
     light_fields: Vec<LightField>,
+    frustums: Vec<LightFieldFrustum>,
 
     sample_count: VkSampleCountFlags,
 
@@ -93,6 +94,7 @@ impl LightFieldViewer {
             view_emulator: ViewEmulator::new(context, Deg(45.0), 2.5),
 
             light_fields,
+            frustums,
 
             sample_count,
 
@@ -259,6 +261,15 @@ impl TScene for LightFieldViewer {
             desc,
         )?;
 
+        let frustums = Self::create_frustum_renderers(
+            &self.context,
+            &render_targets,
+            self.sample_count,
+            desc,
+            &self.frustums,
+        )?;
+
+        *self.frustum_renderers.try_borrow_mut()? = frustums;
         *self.coordinate_systems.try_borrow_mut()? = coordinate_systems;
         *self.render_targets.try_borrow_mut()? = render_targets;
         *self.pipelines.try_borrow_mut()? = pipelines;
