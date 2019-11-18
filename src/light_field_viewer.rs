@@ -161,6 +161,7 @@ impl TScene for LightFieldViewer {
             self.pipelines.try_borrow()?.deref(),
             self.render_targets.try_borrow()?.deref(),
             self.coordinate_systems.try_borrow()?.deref(),
+            self.frustum_renderers.try_borrow()?.deref(),
         ) {
             (
                 TargetMode::Single(index),
@@ -169,6 +170,7 @@ impl TScene for LightFieldViewer {
                 TargetMode::Single(pipeline),
                 TargetMode::Single(render_target),
                 TargetMode::Single(coordinate_system),
+                TargetMode::Single(frustum_renderer),
             ) => {
                 Self::render(
                     *index,
@@ -180,6 +182,7 @@ impl TScene for LightFieldViewer {
                     example_descriptor,
                     &self.light_fields,
                     coordinate_system,
+                    frustum_renderer,
                 )?;
             }
             (
@@ -189,6 +192,7 @@ impl TScene for LightFieldViewer {
                 TargetMode::Stereo(left_pipeline, right_pipeline),
                 TargetMode::Stereo(left_render_target, right_render_target),
                 TargetMode::Stereo(left_coordinate_system, right_coordinate_system),
+                TargetMode::Stereo(left_frustum_renderer, right_frustum_renderer),
             ) => {
                 let (left_transform, right_transform) = transforms
                     .as_ref()
@@ -205,6 +209,7 @@ impl TScene for LightFieldViewer {
                     left_descriptor,
                     &self.light_fields,
                     left_coordinate_system,
+                    left_frustum_renderer,
                 )?;
 
                 Self::render(
@@ -217,6 +222,7 @@ impl TScene for LightFieldViewer {
                     right_descriptor,
                     &self.light_fields,
                     right_coordinate_system,
+                    right_frustum_renderer,
                 )?;
             }
             _ => create_error!("invalid target mode setup"),
@@ -272,6 +278,7 @@ impl LightFieldViewer {
         descriptor_set: &Arc<DescriptorSet>,
         light_fields: &[LightField],
         coordinate_system: &CoordinateSystem,
+        frustum_renderer: &FrustumRenderer,
     ) -> VerboseResult<()> {
         {
             let mut mapped = view_buffer.map_complete()?;
@@ -287,6 +294,7 @@ impl LightFieldViewer {
         }
 
         coordinate_system.render(command_buffer, descriptor_set)?;
+        frustum_renderer.render(command_buffer, descriptor_set)?;
 
         render_target.end(command_buffer);
 
