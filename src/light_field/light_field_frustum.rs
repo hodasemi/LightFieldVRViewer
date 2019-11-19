@@ -177,12 +177,26 @@ impl LightFieldFrustum {
     }
 
     #[inline]
+    /// `base_direction` and `direction` have to be normalized
     fn calculate_length_for_direction(
         base_direction: Vector3<f32>,
         direction: Vector3<f32>,
         base_length: f32,
     ) -> f32 {
-        unimplemented!()
+        if cfg!(debug_assertions) {
+            if (base_direction.magnitude() - 1.0).abs() > 0.0001 {
+                panic!(
+                    "base direction is not normalized: {}",
+                    base_direction.magnitude()
+                );
+            }
+
+            if (direction.magnitude() - 1.0).abs() > 0.0001 {
+                panic!("direction is not normalized: {}", direction.magnitude());
+            }
+        }
+
+        base_length / (direction.dot(base_direction))
     }
 
     #[inline]

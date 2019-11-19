@@ -2,7 +2,6 @@ use context::prelude::*;
 use context::ContextObject;
 
 use std::cell::{Cell, RefCell};
-use std::mem;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -10,8 +9,11 @@ use cgmath::{vec3, vec4, Deg, Vector3};
 
 use super::debug::{coordinate_system::CoordinateSystem, frustums::FrustumRenderer};
 use super::{
-    example_object::ExampleVertex,
-    light_field::{light_field_frustum::LightFieldFrustum, LightField},
+    light_field::{
+        light_field_frustum::LightFieldFrustum,
+        light_field_renderer::{LightFieldRenderer, LightFieldVertex},
+        LightField,
+    },
     view_emulator::ViewEmulator,
 };
 
@@ -53,7 +55,8 @@ impl LightFieldViewer {
         let view_buffers = Self::create_view_buffers(context)?;
 
         let transform_descriptor = Self::create_transform_descriptor(context, &view_buffers)?;
-        let light_field_desc_layout = LightField::descriptor_layout(context.device())?;
+        let light_field_desc_layout =
+            LightFieldRenderer::descriptor_layout(context.device().clone())?;
 
         let desc = match &transform_descriptor {
             TargetMode::Single(desc) => desc,
@@ -238,7 +241,8 @@ impl TScene for LightFieldViewer {
 
         let render_targets = Self::create_render_targets(&self.context)?;
 
-        let light_field_desc_layout = LightField::descriptor_layout(self.context.device())?;
+        let light_field_desc_layout =
+            LightFieldRenderer::descriptor_layout(self.context.device().clone())?;
 
         let desc = match &self.transform_descriptor {
             TargetMode::Single(desc) => desc,
@@ -377,28 +381,7 @@ impl LightFieldViewer {
     ) -> VerboseResult<Arc<Pipeline>> {
         let render_core = context.render_core();
 
-        let input_bindings = vec![VkVertexInputBindingDescription {
-            binding: 0,
-            stride: mem::size_of::<ExampleVertex>() as u32,
-            inputRate: VK_VERTEX_INPUT_RATE_VERTEX,
-        }];
-
-        let input_attributes = vec![
-            // position
-            VkVertexInputAttributeDescription {
-                location: 0,
-                binding: 0,
-                format: VK_FORMAT_R32G32B32_SFLOAT,
-                offset: 0,
-            },
-            // uvs
-            VkVertexInputAttributeDescription {
-                location: 1,
-                binding: 0,
-                format: VK_FORMAT_R32G32_SFLOAT,
-                offset: 12,
-            },
-        ];
+        let (input_bindings, input_attributes) = LightFieldVertex::vertex_input_info();
 
         Pipeline::new_graphics()
             .set_vertex_shader(vertex_shader, input_bindings, input_attributes)

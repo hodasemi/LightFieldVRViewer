@@ -1,6 +1,6 @@
 mod alpha_maps;
 pub mod light_field_frustum;
-mod light_field_renderer;
+pub mod light_field_renderer;
 
 use context::prelude::*;
 use image::{ImageBuffer, Pixel, Rgba};
@@ -174,7 +174,7 @@ impl LightField {
             // )?);
         }
 
-        let light_field_renderer = LightFieldRenderer::new(frustums.clone(), image_data)?;
+        let light_field_renderer = LightFieldRenderer::new(context, frustums.clone(), image_data)?;
 
         println!("finished loading light field {}", dir);
 
@@ -204,17 +204,6 @@ impl LightField {
             .render(command_buffer, transform_descriptor)?;
 
         Ok(())
-    }
-
-    pub fn descriptor_layout(device: &Arc<Device>) -> VerboseResult<Arc<DescriptorSetLayout>> {
-        Ok(DescriptorSetLayout::builder()
-            .add_layout_binding(
-                0,
-                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                VK_SHADER_STAGE_FRAGMENT_BIT,
-                0,
-            )
-            .build(device.clone())?)
     }
 
     #[inline]
