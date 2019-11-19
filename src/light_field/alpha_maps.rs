@@ -93,6 +93,9 @@ impl AlphaMaps {
                     base_depth = (base_depth + depth) / 2.0;
                 }
 
+                // max out the depth at 500 meters
+                base_depth = base_depth.min(500.0);
+
                 alpha_map.depth = Some(base_depth);
             }
         }

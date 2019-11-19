@@ -46,7 +46,7 @@ impl ViewEmulator {
                 45.0,
                 context.render_core().width() as f32 / context.render_core().height() as f32,
                 0.01,
-                100.0,
+                1000.0,
             ),
             view: Matrix4::look_at(position, position + direction, UP),
         };
@@ -183,7 +183,7 @@ impl ViewEmulator {
             45.0,
             self.context.render_core().width() as f32 / self.context.render_core().height() as f32,
             0.01,
-            100.0,
+            1000.0,
         );
 
         self.simulation_transform.set(transform);

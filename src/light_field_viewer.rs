@@ -557,10 +557,12 @@ impl LightFieldViewer {
         let render_core = context.render_core();
         let images = render_core.images();
 
+        let clear_color = vec4(0.2, 0.2, 0.2, 1.0);
+
         match images {
             TargetMode::Single(images) => {
                 let render_target = RenderTarget::new(render_core.width(), render_core.height())
-                    .set_prepared_targets(&images, 0, vec4(0.2, 0.2, 0.2, 1.0))
+                    .set_prepared_targets(&images, 0, clear_color)
                     .add_target_info(CustomTarget::depth())
                     .build(context.device(), context.queue())?;
 
@@ -569,13 +571,13 @@ impl LightFieldViewer {
             TargetMode::Stereo(left_images, right_images) => {
                 let left_render_target =
                     RenderTarget::new(render_core.width(), render_core.height())
-                        .set_prepared_targets(&left_images, 0, vec4(0.2, 0.2, 0.2, 1.0))
+                        .set_prepared_targets(&left_images, 0, clear_color)
                         .add_target_info(CustomTarget::depth())
                         .build(context.device(), context.queue())?;
 
                 let right_render_target =
                     RenderTarget::new(render_core.width(), render_core.height())
-                        .set_prepared_targets(&right_images, 0, vec4(0.2, 0.2, 0.2, 1.0))
+                        .set_prepared_targets(&right_images, 0, clear_color)
                         .add_target_info(CustomTarget::depth())
                         .build(context.device(), context.queue())?;
 
