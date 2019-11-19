@@ -1,5 +1,6 @@
+mod alpha_maps;
 pub mod light_field_frustum;
-mod single_view;
+mod light_field_renderer;
 
 use context::prelude::*;
 use image::{ImageBuffer, Pixel, Rgba};
@@ -7,40 +8,32 @@ use image::{ImageBuffer, Pixel, Rgba};
 use super::config::Config;
 use super::light_field_viewer::{DEFAULT_FORWARD, UP};
 
+use alpha_maps::AlphaMaps;
 use light_field_frustum::LightFieldFrustum;
-use single_view::SingleViewLayer;
+use light_field_renderer::LightFieldRenderer;
 
 use cgmath::{Array, InnerSpace, Vector3};
 
-use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 
-use pxm::PFM;
-
 const EPSILON: f32 = 0.5;
-
-#[derive(Clone, Debug)]
-struct AlphaMap {
-    data: Vec<Vec<bool>>,
-}
 
 pub struct LightField {
     pub config: Config,
 
-    input_images: Vec<Vec<Option<SingleViewLayer>>>,
+    light_field_renderer: LightFieldRenderer,
 }
 
 impl LightField {
     pub fn new(context: &Arc<Context>, dir: &str) -> VerboseResult<(Self, Vec<LightFieldFrustum>)> {
         let config = Config::load(&format!("{}/parameters.cfg", dir))?;
 
-        let mut input_images = vec![
-            vec![None; config.extrinsics.vertical_camera_count as usize];
-            config.extrinsics.horizontal_camera_count as usize
-        ];
+        // let mut input_images = vec![
+        //     vec![None; config.extrinsics.vertical_camera_count as usize];
+        //     config.extrinsics.horizontal_camera_count as usize
+        // ];
 
         let mut threads = Vec::with_capacity(
             (config.extrinsics.horizontal_camera_count * config.extrinsics.vertical_camera_count)
@@ -50,8 +43,8 @@ impl LightField {
         let mut total_index = 0;
         let disparity_difference = config.meta.disp_min.abs() + config.meta.disp_max.abs();
 
-        for (x, row) in input_images.iter().enumerate() {
-            for (y, _image) in row.iter().enumerate() {
+        for x in 0..config.extrinsics.horizontal_camera_count as usize {
+            for y in 0..config.extrinsics.vertical_camera_count as usize {
                 let queue = context.queue().clone();
                 let device = context.device().clone();
 
@@ -81,13 +74,9 @@ impl LightField {
                         create_error!(format!("{} does not exist", depth_path));
                     }
 
-                    let alpha_maps = Self::load_disparity_pfm(
-                        &disparity_path,
-                        disparity_difference as usize,
-                        EPSILON,
-                    )?;
-
-                    let depth_pfm = Self::open_pfm_file(&depth_path)?;
+                    let alpha_maps =
+                        AlphaMaps::new(&disparity_path, disparity_difference as usize, EPSILON)?
+                            .load_depth(&depth_path)?;
 
                     let image_data = match image::open(&image_path) {
                         Ok(tex) => tex.to_rgba(),
@@ -105,9 +94,8 @@ impl LightField {
                     }
 
                     let mut images = Vec::with_capacity(alpha_maps.len());
-                    let mut layer: usize = 0;
 
-                    for alpha_map in alpha_maps {
+                    for alpha_map in alpha_maps.iter() {
                         let mut target_image: ImageBuffer<Rgba<u8>, Vec<u8>> =
                             ImageBuffer::from_pixel(
                                 image_data.width(),
@@ -117,21 +105,10 @@ impl LightField {
 
                         let mut found_value = false;
 
-                        for (x, row) in alpha_map.data.iter().enumerate() {
-                            for (y, alpha_value) in row.iter().enumerate() {
-                                if *alpha_value {
-                                    target_image[(x as u32, y as u32)] =
-                                        image_data[(x as u32, y as u32)];
-
-                                    found_value = true;
-                                } else {
-                                    target_image[(x as u32, y as u32)] =
-                                        Rgba::from_channels(255, 0, 0, 255);
-
-                                    // found_value = true;
-                                }
-                            }
-                        }
+                        alpha_map.for_each_alpha(|x, y| {
+                            target_image[(x as u32, y as u32)] = image_data[(x as u32, y as u32)];
+                            found_value = true;
+                        });
 
                         if found_value {
                             let image = Image::from_raw(
@@ -143,10 +120,13 @@ impl LightField {
                             .nearest_sampler()
                             .build(&device, &queue)?;
 
-                            images.push((image, layer));
+                            images.push((
+                                image,
+                                alpha_map
+                                    .depth()
+                                    .ok_or("no depth attached to this alpha map")?,
+                            ));
                         }
-
-                        layer += 1;
                     }
 
                     Ok((images, x, y))
@@ -173,14 +153,14 @@ impl LightField {
 
         let right = direction.cross(up).normalize();
 
-        let plane_center = center + direction * config.extrinsics.focus_distance;
+        // let plane_center = center + direction * config.extrinsics.focus_distance;
 
         let frustums = LightFieldFrustum::create_frustums(center, direction, up, right, &config);
 
-        let mut images = Vec::with_capacity(threads.len());
+        let mut image_data = Vec::with_capacity(threads.len());
 
         for thread in threads {
-            images.push(thread.join()??);
+            image_data.push(thread.join()??);
 
             // input_images[x][y] = Some(SingleViewLayer::new(
             //     images,
@@ -194,12 +174,14 @@ impl LightField {
             // )?);
         }
 
+        let light_field_renderer = LightFieldRenderer::new(frustums.clone(), image_data)?;
+
         println!("finished loading light field {}", dir);
 
         Ok((
             LightField {
                 config,
-                input_images,
+                light_field_renderer,
             },
             frustums,
         ))
@@ -210,13 +192,16 @@ impl LightField {
         command_buffer: &Arc<CommandBuffer>,
         transform_descriptor: &Arc<DescriptorSet>,
     ) -> VerboseResult<()> {
-        for row in self.input_images.iter() {
-            for single_view_opt in row.iter() {
-                if let Some(single_view) = single_view_opt {
-                    single_view.render(command_buffer, transform_descriptor)?;
-                }
-            }
-        }
+        // for row in self.input_images.iter() {
+        //     for single_view_opt in row.iter() {
+        //         if let Some(single_view) = single_view_opt {
+        //             single_view.render(command_buffer, transform_descriptor)?;
+        //         }
+        //     }
+        // }
+
+        self.light_field_renderer
+            .render(command_buffer, transform_descriptor)?;
 
         Ok(())
     }
@@ -230,42 +215,6 @@ impl LightField {
                 0,
             )
             .build(device.clone())?)
-    }
-
-    fn load_disparity_pfm(
-        path: &str,
-        alpha_map_count: usize,
-        epsilon: f32,
-    ) -> VerboseResult<Vec<AlphaMap>> {
-        let pfm = Self::open_pfm_file(path)?;
-
-        let mut alpha_maps = vec![
-            AlphaMap {
-                data: vec![vec![false; pfm.height as usize]; pfm.width as usize],
-            };
-            alpha_map_count
-        ];
-
-        for (index, disp_data) in pfm.data.iter().enumerate() {
-            let y = (index as f32 / pfm.height as f32).floor() as usize;
-            let x = index - (y * pfm.height);
-
-            for (disparity, alpha_map) in alpha_maps.iter_mut().enumerate() {
-                if (disp_data.abs() - disparity as f32).abs() <= epsilon {
-                    alpha_map.data[x][y] = true;
-                }
-            }
-        }
-
-        Ok(alpha_maps)
-    }
-
-    #[inline]
-    fn open_pfm_file(path: &str) -> VerboseResult<PFM> {
-        let pfm_file = File::open(path)?;
-        let mut pfm_bufreader = BufReader::new(pfm_file);
-
-        Ok(PFM::read_from(&mut pfm_bufreader)?)
     }
 
     #[inline]
