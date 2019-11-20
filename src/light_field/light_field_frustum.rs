@@ -211,8 +211,8 @@ impl LightFieldFrustum {
         right: Vector3<f32>,
         distance: f32,
     ) -> (Vector3<f32>, Vector3<f32>, Vector3<f32>, Vector3<f32>) {
-        let horizontal = right * distance;
-        let vertical = up * distance;
+        let horizontal = right * (distance / 2.0);
+        let vertical = up * (distance / 2.0);
 
         let left_top = center - horizontal + vertical;
         let left_bottom = center - horizontal - vertical;
