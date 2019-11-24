@@ -63,6 +63,7 @@ impl Intrinsic {
     }
 
     // fstop in meter
+    #[allow(unused)]
     pub fn fstop(&self) -> f32 {
         self.fstop * 0.001
     }
