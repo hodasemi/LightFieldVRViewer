@@ -34,7 +34,7 @@ fn main() -> VerboseResult<()> {
         // .set_openxr_json("/usr/share/openxr/1/openxr_monado.json")
         .build()?;
 
-    let (lightfield, frustum) = LightField::new(&context, "data/shot_01")?;
+    let (lightfield, frustum) = LightField::new(&context, "data/shot_02")?;
 
     // let light_field = vec![
     //     LightField::new(&context, "data/shot_01")?,

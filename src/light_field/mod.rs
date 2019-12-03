@@ -1,4 +1,5 @@
 mod alpha_maps;
+mod counted_vec;
 pub mod light_field_frustum;
 pub mod light_field_renderer;
 
@@ -95,7 +96,7 @@ impl LightField {
 
                     let mut images = Vec::with_capacity(alpha_maps.len());
 
-                    for alpha_map in alpha_maps.iter() {
+                    for (disparity_index, alpha_map) in alpha_maps.iter().enumerate() {
                         let mut target_image: ImageBuffer<Rgba<u8>, Vec<u8>> =
                             ImageBuffer::from_pixel(
                                 image_data.width(),
@@ -122,8 +123,10 @@ impl LightField {
 
                             images.push((
                                 image,
+                                disparity_index,
                                 alpha_map
-                                    .depth()
+                                    .depth_values()
+                                    .clone()
                                     .ok_or("no depth attached to this alpha map")?,
                             ));
                         }
@@ -153,25 +156,12 @@ impl LightField {
 
         let right = direction.cross(up).normalize();
 
-        // let plane_center = center + direction * config.extrinsics.focus_distance;
-
         let frustums = LightFieldFrustum::create_frustums(center, direction, up, right, &config);
 
         let mut image_data = Vec::with_capacity(threads.len());
 
         for thread in threads {
             image_data.push(thread.join()??);
-
-            // input_images[x][y] = Some(SingleViewLayer::new(
-            //     images,
-            //     x as u32,
-            //     y as u32,
-            //     &config,
-            //     plane_center,
-            //     direction,
-            //     right,
-            //     up,
-            // )?);
         }
 
         let light_field_renderer = LightFieldRenderer::new(context, frustums.clone(), image_data)?;
@@ -192,14 +182,6 @@ impl LightField {
         command_buffer: &Arc<CommandBuffer>,
         transform_descriptor: &Arc<DescriptorSet>,
     ) -> VerboseResult<()> {
-        // for row in self.input_images.iter() {
-        //     for single_view_opt in row.iter() {
-        //         if let Some(single_view) = single_view_opt {
-        //             single_view.render(command_buffer, transform_descriptor)?;
-        //         }
-        //     }
-        // }
-
         self.light_field_renderer
             .render(command_buffer, transform_descriptor)?;
 

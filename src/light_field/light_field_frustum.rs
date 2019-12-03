@@ -71,38 +71,6 @@ impl LightFieldFrustum {
         frustums
     }
 
-    // fn as_aperture_size(
-    //     x: usize,
-    //     y: usize,
-    //     camera_center: Vector3<f32>,
-    //     direction: Vector3<f32>,
-    //     up: Vector3<f32>,
-    //     right: Vector3<f32>,
-    //     config: &Config,
-    // ) -> Self {
-    //     let sensor_center = camera_center - direction * config.intrinsics.focal_length();
-
-    //     let (sensor_left_top, sensor_left_bottom, sensor_right_top, sensor_right_bottom) =
-    //         Self::calculate_corners(sensor_center, up, right, config.intrinsics.sensor_size());
-
-    //     let (aperture_left_top, aperture_left_bottom, aperture_right_top, aperture_right_bottom) =
-    //         Self::calculate_corners(camera_center, up, right, config.intrinsics.fstop());
-
-    //     let left_top = Line::create(aperture_left_top, sensor_left_top);
-    //     let left_bottom = Line::create(aperture_left_bottom, sensor_left_bottom);
-    //     let right_top = Line::create(aperture_right_top, sensor_right_top);
-    //     let right_bottom = Line::create(aperture_right_bottom, sensor_right_bottom);
-
-    //     LightFieldFrustum {
-    //         position: (x, y),
-
-    //         left_top,
-    //         left_bottom,
-    //         right_top,
-    //         right_bottom,
-    //     }
-    // }
-
     fn as_f_stop(
         x: usize,
         y: usize,

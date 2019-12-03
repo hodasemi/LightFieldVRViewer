@@ -1,6 +1,6 @@
 use context::prelude::*;
 
-use super::light_field_frustum::LightFieldFrustum;
+use super::{counted_vec::CountedVec, light_field_frustum::LightFieldFrustum};
 
 use cgmath::{vec2, Vector2, Vector3};
 
@@ -102,11 +102,22 @@ pub struct LightFieldRenderer {
     descriptor: Arc<DescriptorSet>,
 }
 
+struct PlainImage {
+    image: Arc<Image>,
+    frustum: (usize, usize),
+    depth_values: CountedVec<f32>,
+}
+
+struct DisparityPlain {
+    images: Vec<PlainImage>,
+    disparity_index: usize,
+}
+
 impl LightFieldRenderer {
     pub fn new(
         context: &Arc<Context>,
-        frustums: Vec<LightFieldFrustum>,
-        image_data: Vec<(Vec<(Arc<Image>, f32)>, usize, usize)>,
+        mut frustums: Vec<LightFieldFrustum>,
+        mut image_data: Vec<(Vec<(Arc<Image>, usize, CountedVec<f32>)>, usize, usize)>,
     ) -> VerboseResult<LightFieldRenderer> {
         let mut sorted_frustums = HashMap::new();
 
@@ -114,20 +125,68 @@ impl LightFieldRenderer {
             sorted_frustums.insert(frustum.position(), frustum);
         }
 
+        let mut disparity_plains: Vec<DisparityPlain> = Vec::new();
+
+        while let Some((mut images, x, y)) = image_data.pop() {
+            while let Some((image, disparity_index, depth_values)) = images.pop() {
+                // create plain sorted image
+                let plain_image = PlainImage {
+                    image,
+                    frustum: (x, y),
+                    depth_values,
+                };
+
+                // search for disparity index
+                match disparity_plains
+                    .iter()
+                    .position(|plain| plain.disparity_index == disparity_index)
+                {
+                    // if we can find the disparity layer, just add the plain image
+                    Some(index) => disparity_plains[index].images.push(plain_image),
+
+                    // if we couldn't find the disparity layer, add layer and image
+                    None => disparity_plains.push(DisparityPlain {
+                        images: vec![plain_image],
+                        disparity_index,
+                    }),
+                }
+            }
+        }
+
+        // sort ascending by disparity index
+        disparity_plains.sort_by(|lhs, rhs| lhs.disparity_index.cmp(&rhs.disparity_index));
+
         let mut image_collection = Vec::new();
         let mut vertices = Vec::new();
 
-        for (images, x, y) in image_data.iter() {
-            let frustum = sorted_frustums
-                .get(&(*x, *y))
-                .ok_or(format!("no frustum found at ({}, {})", x, y))?;
+        for disparity_plain in disparity_plains.iter() {
+            println!(
+                "disparity plain: {}, image count: {}",
+                disparity_plain.disparity_index,
+                disparity_plain.images.len()
+            );
 
-            for (image, depth) in images {
-                let current_index = image_collection.len();
-                image_collection.push(image.clone());
+            // calculate average depth of disparity layer
+            let mut total_depth = 0.0;
+
+            for image in disparity_plain.images.iter() {
+                total_depth += image.depth_values.weighted_average(0.001);
+            }
+
+            let layer_depth = total_depth as f32 / disparity_plain.images.len() as f32;
+
+            println!("\tlayer distance: {:.2}m", layer_depth);
+
+            for image in disparity_plain.images.iter() {
+                let frustum = sorted_frustums
+                    .get(&image.frustum)
+                    .ok_or(format!("no frustum found at {:?}", image.frustum))?;
 
                 let (left_top, left_bottom, right_top, right_bottom) =
-                    frustum.get_corners_at_depth(*depth);
+                    frustum.get_corners_at_depth(layer_depth);
+
+                let current_index = image_collection.len();
+                image_collection.push(image.image.clone());
 
                 vertices.extend(&LightFieldVertex::create_quad(
                     left_top,

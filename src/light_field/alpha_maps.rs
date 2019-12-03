@@ -1,5 +1,7 @@
 use context::prelude::*;
 
+use super::counted_vec::CountedVec;
+
 use std::fs::File;
 use std::io::BufReader;
 use std::slice::Iter;
@@ -9,11 +11,11 @@ use pxm::PFM;
 // 1 milli meter
 const EQ_THRESHOLD: f32 = 0.001;
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct AlphaMap {
     data: Vec<Vec<bool>>,
 
-    depth: Option<f32>,
+    depth: Option<CountedVec<f32>>,
 }
 
 impl AlphaMap {
@@ -38,8 +40,8 @@ impl AlphaMap {
         }
     }
 
-    pub fn depth(&self) -> Option<f32> {
-        self.depth
+    pub fn depth_values(&self) -> &Option<CountedVec<f32>> {
+        &self.depth
     }
 }
 
@@ -70,33 +72,16 @@ impl AlphaMaps {
         let depth_pfm = Self::open_pfm_file(&path)?;
 
         for alpha_map in self.maps.iter_mut() {
-            let mut depth_values = Vec::new();
+            let mut depth_values = CountedVec::new();
 
             alpha_map.for_each_alpha(|x, y| {
                 let index = Self::to_index(&depth_pfm, x, y);
 
-                let depth = depth_pfm.data[index];
-
-                if !depth_values.contains(&depth) {
-                    depth_values.push(depth);
-                }
+                depth_values.insert(depth_pfm.data[index]);
             });
 
             if !depth_values.is_empty() {
-                let mut base_depth = depth_values[0];
-
-                for depth in depth_values.iter() {
-                    if !Self::check_eq(base_depth, *depth) {
-                        create_error!("depth value are too far apart");
-                    }
-
-                    base_depth = (base_depth + depth) / 2.0;
-                }
-
-                // max out the depth at 500 meters
-                base_depth = base_depth.min(500.0);
-
-                alpha_map.depth = Some(base_depth);
+                alpha_map.depth = Some(depth_values);
             }
         }
 
