@@ -46,9 +46,6 @@ impl LightField {
 
         for x in 0..config.extrinsics.horizontal_camera_count as usize {
             for y in 0..config.extrinsics.vertical_camera_count as usize {
-                let queue = context.queue().clone();
-                let device = context.device().clone();
-
                 let meta_image_width = config.intrinsics.image_width;
                 let meta_image_height = config.intrinsics.image_height;
 
@@ -91,7 +88,12 @@ impl LightField {
                     if image_data.width() != meta_image_width
                         || image_data.height() != meta_image_height
                     {
-                        create_error!(format!("Image ({}) has a not expected extent", image_path));
+                        create_error!(format!(
+                            "Image ({}) has a not expected extent, expected: {:?} found: {:?}",
+                            image_path,
+                            (meta_image_width, meta_image_height),
+                            (image_data.width(), image_data.height())
+                        ));
                     }
 
                     let mut images = Vec::with_capacity(alpha_maps.len());
@@ -112,17 +114,8 @@ impl LightField {
                         });
 
                         if found_value {
-                            let image = Image::from_raw(
-                                target_image.into_raw(),
-                                image_data.width(),
-                                image_data.height(),
-                            )
-                            .format(VK_FORMAT_R8G8B8A8_UNORM)
-                            .nearest_sampler()
-                            .build(&device, &queue)?;
-
                             images.push((
-                                image,
+                                target_image,
                                 disparity_index,
                                 alpha_map
                                     .depth_values()
@@ -164,7 +157,15 @@ impl LightField {
             image_data.push(thread.join()??);
         }
 
-        let light_field_renderer = LightFieldRenderer::new(context, frustums.clone(), image_data)?;
+        let light_field_renderer = LightFieldRenderer::new(
+            context,
+            frustums.clone(),
+            image_data,
+            (
+                config.extrinsics.horizontal_camera_count as usize,
+                config.extrinsics.vertical_camera_count as usize,
+            ),
+        )?;
 
         println!("finished loading light field {}", dir);
 

@@ -3,6 +3,7 @@ use context::prelude::*;
 use super::{counted_vec::CountedVec, light_field_frustum::LightFieldFrustum};
 
 use cgmath::{vec2, Vector2, Vector3};
+use image::{ImageBuffer, Pixel, Rgba};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -103,7 +104,7 @@ pub struct LightFieldRenderer {
 }
 
 struct PlainImage {
-    image: Arc<Image>,
+    image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     frustum: (usize, usize),
     depth_values: CountedVec<f32>,
 }
@@ -117,19 +118,32 @@ impl LightFieldRenderer {
     pub fn new(
         context: &Arc<Context>,
         mut frustums: Vec<LightFieldFrustum>,
-        mut image_data: Vec<(Vec<(Arc<Image>, usize, CountedVec<f32>)>, usize, usize)>,
+        mut image_data: Vec<(
+            Vec<(ImageBuffer<Rgba<u8>, Vec<u8>>, usize, CountedVec<f32>)>,
+            usize,
+            usize,
+        )>,
+        frustum_extent: (usize, usize),
     ) -> VerboseResult<LightFieldRenderer> {
+        // move data from vector to internal more practical formats with:
+        //      while Some(...) = vector.pop() {}
+        // this moves ownership into new structures
+
+        // create a map for frustums
         let mut sorted_frustums = HashMap::new();
 
-        for frustum in frustums.iter() {
+        while let Some(frustum) = frustums.pop() {
+            println!("{:?}: {:?}", frustum.position(), frustum.left_top.center);
+
             sorted_frustums.insert(frustum.position(), frustum);
         }
 
+        // sort all images by their respective disparity layers
         let mut disparity_plains: Vec<DisparityPlain> = Vec::new();
 
         while let Some((mut images, x, y)) = image_data.pop() {
             while let Some((image, disparity_index, depth_values)) = images.pop() {
-                // create plain sorted image
+                // create plain image
                 let plain_image = PlainImage {
                     image,
                     frustum: (x, y),
@@ -160,12 +174,6 @@ impl LightFieldRenderer {
         let mut vertices = Vec::new();
 
         for disparity_plain in disparity_plains.iter() {
-            println!(
-                "disparity plain: {}, image count: {}",
-                disparity_plain.disparity_index,
-                disparity_plain.images.len()
-            );
-
             // calculate average depth of disparity layer
             let mut total_depth = 0.0;
 
@@ -175,27 +183,75 @@ impl LightFieldRenderer {
 
             let layer_depth = total_depth as f32 / disparity_plain.images.len() as f32;
 
-            println!("\tlayer distance: {:.2}m", layer_depth);
+            // TODO:
+            // (1) [x] find corner frustums (assuming a rectangle)
+            // (2) [x] get image extent
+            // (3) [ ] correctly place all images inside this plane
+            // (4) [ ] offline interpolation of images
+            // (5) [ ] add result to vulkan buffer and descriptor
 
-            for image in disparity_plain.images.iter() {
-                let frustum = sorted_frustums
-                    .get(&image.frustum)
-                    .ok_or(format!("no frustum found at {:?}", image.frustum))?;
+            // find corner frustums
+            let left_top_frustum = &sorted_frustums[&(0, 0)];
+            let left_bottom_frustum = &sorted_frustums[&(0, frustum_extent.1 - 1)];
+            let right_top_frustum = &sorted_frustums[&(frustum_extent.0 - 1, 0)];
+            let right_bottom_frustum =
+                &sorted_frustums[&(frustum_extent.0 - 1, frustum_extent.1 - 1)];
 
-                let (left_top, left_bottom, right_top, right_bottom) =
-                    frustum.get_corners_at_depth(layer_depth);
+            // get image extent
+            let left_top = left_top_frustum.get_corners_at_depth(layer_depth).0;
+            let left_bottom = left_bottom_frustum.get_corners_at_depth(layer_depth).1;
+            let right_top = right_top_frustum.get_corners_at_depth(layer_depth).2;
+            let right_bottom = right_bottom_frustum.get_corners_at_depth(layer_depth).3;
 
-                let current_index = image_collection.len();
-                image_collection.push(image.image.clone());
+            // debug: show plain
+            let image_width = 1024;
+            let image_height = 1024;
+            let test_image: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(
+                image_width,
+                image_height,
+                Rgba::from_channels(
+                    ((20.0 * layer_depth) as u64 % 255) as u8,
+                    ((20.0 * layer_depth) as u64 % 255) as u8,
+                    0,
+                    255,
+                ),
+            );
 
-                vertices.extend(&LightFieldVertex::create_quad(
-                    left_top,
-                    left_bottom,
-                    right_top,
-                    right_bottom,
-                    current_index,
-                ));
-            }
+            let image = Image::from_raw(test_image.into_raw(), image_width, image_height)
+                .format(VK_FORMAT_R8G8B8A8_UNORM)
+                .nearest_sampler()
+                .build(context.device(), context.queue())?;
+
+            let current_index = image_collection.len();
+            image_collection.push(image);
+
+            vertices.extend(&LightFieldVertex::create_quad(
+                left_top,
+                left_bottom,
+                right_top,
+                right_bottom,
+                current_index,
+            ));
+
+            // for image in disparity_plain.images.iter() {
+            //     let frustum = sorted_frustums
+            //         .get(&image.frustum)
+            //         .ok_or(format!("no frustum found at {:?}", image.frustum))?;
+
+            //     let (left_top, left_bottom, right_top, right_bottom) =
+            //         frustum.get_corners_at_depth(layer_depth);
+
+            //     let current_index = image_collection.len();
+            //     image_collection.push(image.image.clone());
+
+            //     vertices.extend(&LightFieldVertex::create_quad(
+            //         left_top,
+            //         left_bottom,
+            //         right_top,
+            //         right_bottom,
+            //         current_index,
+            //     ));
+            // }
         }
 
         let vertex_buffer = Buffer::builder()

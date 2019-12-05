@@ -8,9 +8,6 @@ use std::slice::Iter;
 
 use pxm::PFM;
 
-// 1 milli meter
-const EQ_THRESHOLD: f32 = 0.001;
-
 #[derive(Debug, Clone)]
 pub struct AlphaMap {
     data: Vec<Vec<bool>>,
@@ -115,10 +112,5 @@ impl AlphaMaps {
     #[inline]
     fn to_index(pfm: &PFM, x: usize, y: usize) -> usize {
         y * pfm.height + x
-    }
-
-    #[inline]
-    fn check_eq(f1: f32, f2: f32) -> bool {
-        (f1 - f2) < EQ_THRESHOLD && (f2 - f1) < EQ_THRESHOLD
     }
 }
