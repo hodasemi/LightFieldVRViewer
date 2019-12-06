@@ -165,6 +165,7 @@ impl LightField {
                 config.extrinsics.horizontal_camera_count as usize,
                 config.extrinsics.vertical_camera_count as usize,
             ),
+            config.extrinsics.baseline(),
         )?;
 
         println!("finished loading light field {}", dir);

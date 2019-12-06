@@ -2,7 +2,7 @@ use context::prelude::*;
 
 use super::{counted_vec::CountedVec, light_field_frustum::LightFieldFrustum};
 
-use cgmath::{vec2, Vector2, Vector3};
+use cgmath::{vec2, InnerSpace, Vector2, Vector3};
 use image::{ImageBuffer, Pixel, Rgba};
 
 use std::collections::HashMap;
@@ -103,14 +103,27 @@ pub struct LightFieldRenderer {
     descriptor: Arc<DescriptorSet>,
 }
 
-struct PlainImage {
+struct PlaneImageRatios {
+    left: f32,
+    right: f32,
+    top: f32,
+    bottom: f32,
+}
+
+impl PlaneImageRatios {
+    fn is_inside(&self, x: f32, y: f32) -> bool {
+        x >= self.left && x <= self.right && y >= self.top && y <= self.bottom
+    }
+}
+
+struct PlaneImage {
     image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     frustum: (usize, usize),
     depth_values: CountedVec<f32>,
 }
 
-struct DisparityPlain {
-    images: Vec<PlainImage>,
+struct DisparityPlane {
+    images: Vec<PlaneImage>,
     disparity_index: usize,
 }
 
@@ -124,6 +137,7 @@ impl LightFieldRenderer {
             usize,
         )>,
         frustum_extent: (usize, usize),
+        baseline: f32,
     ) -> VerboseResult<LightFieldRenderer> {
         // move data from vector to internal more practical formats with:
         //      while Some(...) = vector.pop() {}
@@ -139,88 +153,141 @@ impl LightFieldRenderer {
         }
 
         // sort all images by their respective disparity layers
-        let mut disparity_plains: Vec<DisparityPlain> = Vec::new();
+        let mut disparity_planes: Vec<DisparityPlane> = Vec::new();
 
         while let Some((mut images, x, y)) = image_data.pop() {
             while let Some((image, disparity_index, depth_values)) = images.pop() {
-                // create plain image
-                let plain_image = PlainImage {
+                // create plane image
+                let plane_image = PlaneImage {
                     image,
                     frustum: (x, y),
                     depth_values,
                 };
 
                 // search for disparity index
-                match disparity_plains
+                match disparity_planes
                     .iter()
-                    .position(|plain| plain.disparity_index == disparity_index)
+                    .position(|plane| plane.disparity_index == disparity_index)
                 {
-                    // if we can find the disparity layer, just add the plain image
-                    Some(index) => disparity_plains[index].images.push(plain_image),
+                    // if we can find the disparity layer, just add the plane image
+                    Some(index) => disparity_planes[index].images.push(plane_image),
 
                     // if we couldn't find the disparity layer, add layer and image
-                    None => disparity_plains.push(DisparityPlain {
-                        images: vec![plain_image],
+                    None => disparity_planes.push(DisparityPlane {
+                        images: vec![plane_image],
                         disparity_index,
                     }),
                 }
             }
         }
 
-        // sort ascending by disparity index
-        disparity_plains.sort_by(|lhs, rhs| lhs.disparity_index.cmp(&rhs.disparity_index));
-
         let mut image_collection = Vec::new();
         let mut vertices = Vec::new();
 
-        for disparity_plain in disparity_plains.iter() {
+        while let Some(mut disparity_plane) = disparity_planes.pop() {
             // calculate average depth of disparity layer
             let mut total_depth = 0.0;
 
-            for image in disparity_plain.images.iter() {
+            for image in disparity_plane.images.iter() {
                 total_depth += image.depth_values.weighted_average(0.001);
             }
 
-            let layer_depth = total_depth as f32 / disparity_plain.images.len() as f32;
+            let layer_depth = total_depth as f32 / disparity_plane.images.len() as f32;
 
             // TODO:
             // (1) [x] find corner frustums (assuming a rectangle)
             // (2) [x] get image extent
-            // (3) [ ] correctly place all images inside this plane
+            // (3) [x] correctly place all images inside this plane
             // (4) [ ] offline interpolation of images
-            // (5) [ ] add result to vulkan buffer and descriptor
+            // (5) [x] add result to vulkan buffer and descriptor
 
-            // find corner frustums
+            // (1) find corner frustums
             let left_top_frustum = &sorted_frustums[&(0, 0)];
             let left_bottom_frustum = &sorted_frustums[&(0, frustum_extent.1 - 1)];
             let right_top_frustum = &sorted_frustums[&(frustum_extent.0 - 1, 0)];
             let right_bottom_frustum =
                 &sorted_frustums[&(frustum_extent.0 - 1, frustum_extent.1 - 1)];
 
-            // get image extent
+            // (2) get image extent
             let left_top = left_top_frustum.get_corners_at_depth(layer_depth).0;
             let left_bottom = left_bottom_frustum.get_corners_at_depth(layer_depth).1;
             let right_top = right_top_frustum.get_corners_at_depth(layer_depth).2;
             let right_bottom = right_bottom_frustum.get_corners_at_depth(layer_depth).3;
 
-            // debug: show plain
+            // (3) placing images into that plane
+
+            // since all cameras have the same aperture and baseline given in the parameters file of every light field
+            // the length of every side in total = the length of the side of a camera + baseline * (cameras - 1)
+
+            let total_width = (left_top - right_top).magnitude();
+            let total_height = (left_top - left_bottom).magnitude();
+
+            let mut image_locations = Vec::new();
+
+            while let Some(image) = disparity_plane.images.pop() {
+                let (left_top, left_bottom, right_top, _) =
+                    sorted_frustums[&image.frustum].get_corners_at_depth(layer_depth);
+
+                let width = (left_top - right_top).magnitude();
+                let height = (left_top - left_bottom).magnitude();
+                let x = image.frustum.0 as f32 * baseline;
+                let y = image.frustum.1 as f32 * baseline;
+
+                let left_ratio = x / total_width;
+                let right_ratio = (x + width) / total_width;
+                let top_ratio = y / height;
+                let bottom_ratio = (y + height) / total_height;
+
+                let ratios = PlaneImageRatios {
+                    left: left_ratio,
+                    right: right_ratio,
+                    top: top_ratio,
+                    bottom: bottom_ratio,
+                };
+
+                image_locations.push((image.image, ratios))
+            }
+
+            // TODO: size of image
+            // maybe: size of base image + ratio of the missing part ?
             let image_width = 1024;
             let image_height = 1024;
-            let test_image: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(
-                image_width,
-                image_height,
-                Rgba::from_channels(
-                    ((20.0 * layer_depth) as u64 % 255) as u8,
-                    ((20.0 * layer_depth) as u64 % 255) as u8,
-                    0,
-                    255,
-                ),
-            );
 
-            let image = Image::from_raw(test_image.into_raw(), image_width, image_height)
-                .format(VK_FORMAT_R8G8B8A8_UNORM)
-                .nearest_sampler()
-                .build(context.device(), context.queue())?;
+            // (4) offline interpolation of disparity plane image
+            let mut disparity_plane_image: ImageBuffer<Rgba<u8>, Vec<u8>> =
+                ImageBuffer::new(image_width, image_height);
+
+            for (x, y, plane_pixel) in disparity_plane_image.enumerate_pixels_mut() {
+                // consider the middle of a pixel (+ 0.5)
+                let x_ratio = (x as f32 + 0.5) / image_width as f32;
+                let y_ratio = (y as f32 + 0.5) / image_height as f32;
+
+                // let mut overlapping_images = Vec::new();
+
+                for (image, ratios) in image_locations.iter() {
+                    if ratios.is_inside(x_ratio, y_ratio) {
+                        // calculate uv for image
+                        let u = (x_ratio - ratios.left) / (ratios.right - ratios.left);
+                        let v = (y_ratio - ratios.top) / (ratios.bottom - ratios.top);
+
+                        let pixel = image.get_pixel(
+                            (u * image.width() as f32) as u32,
+                            (v * image.height() as f32) as u32,
+                        );
+
+                        *plane_pixel = *pixel;
+
+                        break;
+                    }
+                }
+            }
+
+            // (5) add image and buffer data
+            let image =
+                Image::from_raw(disparity_plane_image.into_raw(), image_width, image_height)
+                    .format(VK_FORMAT_R8G8B8A8_UNORM)
+                    .nearest_sampler()
+                    .build(context.device(), context.queue())?;
 
             let current_index = image_collection.len();
             image_collection.push(image);
@@ -232,26 +299,6 @@ impl LightFieldRenderer {
                 right_bottom,
                 current_index,
             ));
-
-            // for image in disparity_plain.images.iter() {
-            //     let frustum = sorted_frustums
-            //         .get(&image.frustum)
-            //         .ok_or(format!("no frustum found at {:?}", image.frustum))?;
-
-            //     let (left_top, left_bottom, right_top, right_bottom) =
-            //         frustum.get_corners_at_depth(layer_depth);
-
-            //     let current_index = image_collection.len();
-            //     image_collection.push(image.image.clone());
-
-            //     vertices.extend(&LightFieldVertex::create_quad(
-            //         left_top,
-            //         left_bottom,
-            //         right_top,
-            //         right_bottom,
-            //         current_index,
-            //     ));
-            // }
         }
 
         let vertex_buffer = Buffer::builder()
