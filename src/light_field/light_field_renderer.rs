@@ -147,8 +147,6 @@ impl LightFieldRenderer {
         let mut sorted_frustums = HashMap::new();
 
         while let Some(frustum) = frustums.pop() {
-            println!("{:?}: {:?}", frustum.position(), frustum.left_top.center);
-
             sorted_frustums.insert(frustum.position(), frustum);
         }
 
@@ -245,7 +243,10 @@ impl LightFieldRenderer {
                     bottom: bottom_ratio,
                 };
 
-                image_locations.push((image.image, ratios))
+                let center_x = x + width / 2.0;
+                let center_y = y + height / 2.0;
+
+                image_locations.push((image.image, ratios, vec2(center_x, center_y)));
             }
 
             // TODO: size of image
@@ -258,13 +259,18 @@ impl LightFieldRenderer {
                 ImageBuffer::new(image_width, image_height);
 
             for (x, y, plane_pixel) in disparity_plane_image.enumerate_pixels_mut() {
+                // calculate x and y ratio of this pixel in the disparity plane image
+
                 // consider the middle of a pixel (+ 0.5)
                 let x_ratio = (x as f32 + 0.5) / image_width as f32;
                 let y_ratio = (y as f32 + 0.5) / image_height as f32;
 
-                // let mut overlapping_images = Vec::new();
+                // gather pixels from all image that overlap at the location in the plane
+                // together with the center distance of the image to this point
+                let mut overlapping_pixel = Vec::new();
+                let mut distance_sum = 0.0;
 
-                for (image, ratios) in image_locations.iter() {
+                for (image, ratios, center) in image_locations.iter() {
                     if ratios.is_inside(x_ratio, y_ratio) {
                         // calculate uv for image
                         let u = (x_ratio - ratios.left) / (ratios.right - ratios.left);
@@ -275,11 +281,24 @@ impl LightFieldRenderer {
                             (v * image.height() as f32) as u32,
                         );
 
-                        *plane_pixel = *pixel;
+                        let distance_to_center = (vec2(x_ratio, y_ratio) - center).magnitude();
+                        distance_sum += distance_to_center;
 
-                        break;
+                        overlapping_pixel.push((pixel, distance_to_center));
                     }
                 }
+
+                // weight pixels based on distance of center
+                let mut result = Rgba::from_channels(0, 0, 0, 0);
+
+                for (pixel, distance) in overlapping_pixel.iter() {
+                    // closer images get more influence
+                    let weight = (distance_sum - distance) / distance_sum;
+
+                    Self::apply_weight(&mut result, weight, **pixel);
+                }
+
+                *plane_pixel = result;
             }
 
             // (5) add image and buffer data
@@ -301,6 +320,7 @@ impl LightFieldRenderer {
             ));
         }
 
+        // create and setup vulkan handles
         let vertex_buffer = Buffer::builder()
             .set_usage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
             .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
@@ -345,5 +365,15 @@ impl LightFieldRenderer {
             )
             .change_descriptor_count(MAX_IMAGES_PER_LIGHT_FIELD)
             .build(device)
+    }
+
+    #[inline]
+    fn apply_weight(destination: &mut Rgba<u8>, weight: f32, source: Rgba<u8>) {
+        let dst_channels = destination.channels_mut();
+        let src_channels = source.channels();
+
+        for (dst_channel, src_channel) in dst_channels.iter_mut().zip(src_channels.iter()) {
+            *dst_channel += (*src_channel as f32 * weight) as u8;
+        }
     }
 }
