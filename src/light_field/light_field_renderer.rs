@@ -179,6 +179,9 @@ impl LightFieldRenderer {
             }
         }
 
+        // sort ascending by disparity index
+        disparity_planes.sort_by(|lhs, rhs| lhs.disparity_index.cmp(&rhs.disparity_index));
+
         let mut image_collection = Vec::new();
         let mut vertices = Vec::new();
 
@@ -186,11 +189,43 @@ impl LightFieldRenderer {
             // calculate average depth of disparity layer
             let mut total_depth = 0.0;
 
-            for image in disparity_plane.images.iter() {
-                total_depth += image.depth_values.weighted_average(0.001);
+            for (index, image) in disparity_plane.images.iter().enumerate() {
+                let weighted_average = image.depth_values.weighted_average(0.001);
+
+                if (total_depth + weighted_average) == std::f64::NAN {
+                    println!(
+                        "index: {}, current average_depth: {:.2}, current add: {:.2}",
+                        index,
+                        total_depth / (index + 1) as f64,
+                        weighted_average
+                    );
+                }
+
+                println!(
+                    "total_depth ({:.2}) + weighted_average ({:.2}) = {:.2}",
+                    total_depth,
+                    weighted_average,
+                    total_depth + weighted_average
+                );
+
+                total_depth += weighted_average;
+
+                println!("\ttotal_depth: {:.2}", total_depth);
             }
 
-            let layer_depth = total_depth as f32 / disparity_plane.images.len() as f32;
+            println!(
+                "total_depth ({:.2}) / count ({}) = layer_depth ({:.2})",
+                total_depth,
+                disparity_plane.images.len(),
+                total_depth / disparity_plane.images.len() as f64
+            );
+
+            let layer_depth = (total_depth / disparity_plane.images.len() as f64) as f32;
+
+            println!("\nlayer index: {}", disparity_plane.disparity_index);
+            println!("{:.2}", layer_depth);
+
+            // panic!();
 
             // TODO:
             // (1) [x] find corner frustums (assuming a rectangle)

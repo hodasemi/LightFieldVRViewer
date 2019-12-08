@@ -71,7 +71,7 @@ impl<T: PartialEq + Copy> CountedVec<T> {
 }
 
 impl<T: PartialEq + Copy + Into<f64>> CountedVec<T> {
-    pub fn weighted_average(&self, threshold: f32) -> f64 {
+    pub fn weighted_average(&self, threshold: f64) -> f64 {
         let mut total_count = 0;
 
         // gather total count first
@@ -84,12 +84,23 @@ impl<T: PartialEq + Copy + Into<f64>> CountedVec<T> {
 
         for value in self.data.iter() {
             // only consider if above threshold
-            if value.count as f32 > total_count as f32 * threshold {
+            if value.count as f64 > total_count as f64 * threshold {
                 total_value += value.count as f64 * value.value.into();
                 total_threshold_count += value.count;
             }
         }
 
-        total_value / total_threshold_count as f64
+        println!(
+            "total_value ({:.2}) / total_threshold_count ({:.2}) = {:.2}",
+            total_value,
+            total_threshold_count,
+            total_value / total_threshold_count as f64
+        );
+
+        if total_threshold_count == 0 {
+            0.0
+        } else {
+            total_value / total_threshold_count as f64
+        }
     }
 }
