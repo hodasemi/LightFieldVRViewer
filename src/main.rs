@@ -15,7 +15,7 @@ fn main() -> VerboseResult<()> {
     let context = Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
             debugging: true,
-            renderdoc: true,
+            renderdoc: false,
             steam_layer: false,
             use_util: false,
             verbose: false,
@@ -34,15 +34,21 @@ fn main() -> VerboseResult<()> {
         // .set_openxr_json("/usr/share/openxr/1/openxr_monado.json")
         .build()?;
 
-    let (lightfield, frustum) = LightField::new(&context, "data/shot_02")?;
+    let (light_field_1, mut frustum_1) = LightField::new(&context, "data/shot_01")?;
+    let (light_field_2, mut frustum_2) = LightField::new(&context, "data/shot_02")?;
+    let (light_field_3, mut frustum_3) = LightField::new(&context, "data/shot_03")?;
 
-    // let light_field = vec![
-    //     LightField::new(&context, "data/shot_01")?,
-    //     // LightField::new(&context, "data/shot_02")?,
-    // ];
+    let mut frustum = Vec::new();
+    frustum.append(&mut frustum_1);
+    frustum.append(&mut frustum_2);
+    frustum.append(&mut frustum_3);
 
-    let light_field_viewer =
-        LightFieldViewer::new(&context, sample_count, vec![lightfield], frustum)?;
+    let light_field_viewer = LightFieldViewer::new(
+        &context,
+        sample_count,
+        vec![light_field_1, light_field_2, light_field_3],
+        frustum,
+    )?;
 
     context.set_context_object(Some(light_field_viewer.clone()))?;
     context.render_core().add_scene(light_field_viewer)?;
