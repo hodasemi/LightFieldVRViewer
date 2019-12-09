@@ -70,7 +70,7 @@ impl<T: PartialEq + Copy> CountedVec<T> {
     // }
 }
 
-impl<T: PartialEq + Copy + Into<f64>> CountedVec<T> {
+impl<T: PartialEq + Copy + Into<f64> + std::fmt::Debug> CountedVec<T> {
     pub fn weighted_average(&self, threshold: f64) -> f64 {
         let mut total_count = 0;
 
@@ -96,6 +96,10 @@ impl<T: PartialEq + Copy + Into<f64>> CountedVec<T> {
             total_threshold_count,
             total_value / total_threshold_count as f64
         );
+
+        for date in &self.data {
+            println!("count: {}, value: {:.2}", date.count, date.value.into());
+        }
 
         if total_threshold_count == 0 {
             0.0

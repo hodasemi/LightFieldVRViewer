@@ -1,6 +1,7 @@
 use context::prelude::*;
 
 use super::counted_vec::CountedVec;
+use super::ranges::{CountedRange, Ranges};
 
 use std::fs::File;
 use std::io::BufReader;
@@ -12,7 +13,7 @@ use pxm::PFM;
 pub struct AlphaMap {
     data: Vec<Vec<bool>>,
 
-    depth: Option<CountedVec<f32>>,
+    depth: Option<Ranges>,
 }
 
 impl AlphaMap {
@@ -37,7 +38,7 @@ impl AlphaMap {
         }
     }
 
-    pub fn depth_values(&self) -> &Option<CountedVec<f32>> {
+    pub fn depth_values(&self) -> &Option<Ranges> {
         &self.depth
     }
 }
@@ -69,7 +70,7 @@ impl AlphaMaps {
         let depth_pfm = Self::open_pfm_file(&path)?;
 
         for alpha_map in self.maps.iter_mut() {
-            let mut depth_values = CountedVec::new();
+            let mut depth_values = Ranges::new(0.1);
 
             alpha_map.for_each_alpha(|x, y| {
                 let index = Self::to_index(&depth_pfm, x, y);

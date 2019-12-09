@@ -1,6 +1,10 @@
 use context::prelude::*;
 
-use super::{counted_vec::CountedVec, light_field_frustum::LightFieldFrustum};
+use super::{
+    counted_vec::CountedVec,
+    light_field_frustum::LightFieldFrustum,
+    ranges::{CountedRange, Ranges},
+};
 
 use cgmath::{vec2, InnerSpace, Vector2, Vector3};
 use image::{ImageBuffer, Pixel, Rgba};
@@ -119,7 +123,7 @@ impl PlaneImageRatios {
 struct PlaneImage {
     image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     frustum: (usize, usize),
-    depth_values: CountedVec<f32>,
+    depth_values: Ranges,
 }
 
 struct DisparityPlane {
@@ -132,7 +136,7 @@ impl LightFieldRenderer {
         context: &Arc<Context>,
         mut frustums: Vec<LightFieldFrustum>,
         mut image_data: Vec<(
-            Vec<(ImageBuffer<Rgba<u8>, Vec<u8>>, usize, CountedVec<f32>)>,
+            Vec<(ImageBuffer<Rgba<u8>, Vec<u8>>, usize, Ranges)>,
             usize,
             usize,
         )>,
@@ -188,44 +192,19 @@ impl LightFieldRenderer {
         while let Some(mut disparity_plane) = disparity_planes.pop() {
             // calculate average depth of disparity layer
             let mut total_depth = 0.0;
+            let mut total_count = 0;
 
-            for (index, image) in disparity_plane.images.iter().enumerate() {
-                let weighted_average = image.depth_values.weighted_average(0.001);
-
-                if (total_depth + weighted_average) == std::f64::NAN {
-                    println!(
-                        "index: {}, current average_depth: {:.2}, current add: {:.2}",
-                        index,
-                        total_depth / (index + 1) as f64,
-                        weighted_average
-                    );
+            for image in disparity_plane.images.iter() {
+                if let Some(average) = image.depth_values.weighted_average(0.01) {
+                    total_depth += average;
+                    total_count += 1;
                 }
-
-                println!(
-                    "total_depth ({:.2}) + weighted_average ({:.2}) = {:.2}",
-                    total_depth,
-                    weighted_average,
-                    total_depth + weighted_average
-                );
-
-                total_depth += weighted_average;
-
-                println!("\ttotal_depth: {:.2}", total_depth);
             }
 
-            println!(
-                "total_depth ({:.2}) / count ({}) = layer_depth ({:.2})",
-                total_depth,
-                disparity_plane.images.len(),
-                total_depth / disparity_plane.images.len() as f64
-            );
-
-            let layer_depth = (total_depth / disparity_plane.images.len() as f64) as f32;
+            let layer_depth = (total_depth / total_count as f64) as f32;
 
             println!("\nlayer index: {}", disparity_plane.disparity_index);
             println!("{:.2}", layer_depth);
-
-            // panic!();
 
             // TODO:
             // (1) [x] find corner frustums (assuming a rectangle)

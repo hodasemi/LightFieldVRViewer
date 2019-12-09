@@ -2,6 +2,7 @@ mod alpha_maps;
 mod counted_vec;
 pub mod light_field_frustum;
 pub mod light_field_renderer;
+mod ranges;
 
 use context::prelude::*;
 use image::{ImageBuffer, Pixel, Rgba};
