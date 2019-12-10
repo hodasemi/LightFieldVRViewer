@@ -275,7 +275,7 @@ impl LightFieldRenderer {
                 let x_ratio = (x as f32 + 0.5) / image_width as f32;
                 let y_ratio = (y as f32 + 0.5) / image_height as f32;
 
-                // gather pixels from all image that overlap at the location in the plane
+                // gather pixels from all images that overlap at the location in the plane
                 // together with the center distance of the image to this point
                 let mut overlapping_pixel = Vec::new();
                 let mut distance_sum = 0.0;

@@ -92,13 +92,7 @@ impl CountedRange {
     }
 
     fn sum(&self) -> f32 {
-        let mut sum = 0.0;
-
-        for value in self.values.iter() {
-            sum = sum + *value;
-        }
-
-        sum
+        self.values.iter().sum()
     }
 
     pub fn average(&self) -> f32 {
