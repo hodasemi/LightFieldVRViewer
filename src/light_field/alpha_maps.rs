@@ -1,7 +1,6 @@
 use context::prelude::*;
 
-use super::counted_vec::CountedVec;
-use super::ranges::{CountedRange, Ranges};
+use super::ranges::Ranges;
 
 use std::fs::File;
 use std::io::BufReader;

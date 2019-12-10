@@ -33,6 +33,9 @@ pub struct LightFieldFrustum {
     main_direction: Vector3<f32>,
 }
 
+unsafe impl Sync for LightFieldFrustum {}
+unsafe impl Send for LightFieldFrustum {}
+
 impl LightFieldFrustum {
     /// `direction`, `up`, `right` need to be normalized
     pub fn create_frustums(

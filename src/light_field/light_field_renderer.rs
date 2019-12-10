@@ -1,10 +1,6 @@
 use context::prelude::*;
 
-use super::{
-    counted_vec::CountedVec,
-    light_field_frustum::LightFieldFrustum,
-    ranges::{CountedRange, Ranges},
-};
+use super::{light_field_frustum::LightFieldFrustum, ranges::Ranges};
 
 use cgmath::{vec2, InnerSpace, Vector2, Vector3};
 use image::{ImageBuffer, Pixel, Rgba};

@@ -32,13 +32,13 @@ impl Ranges {
         self.data.is_empty()
     }
 
-    pub fn len(&self) -> usize {
-        self.data.len()
-    }
+    // pub fn len(&self) -> usize {
+    //     self.data.len()
+    // }
 
-    pub fn element_count(&self) -> usize {
-        self.total_element_count
-    }
+    // pub fn element_count(&self) -> usize {
+    //     self.total_element_count
+    // }
 
     pub fn weighted_average(&self, threshold: f64) -> Option<f64> {
         let mut weight_count = 0;

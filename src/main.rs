@@ -6,8 +6,10 @@ mod light_field;
 mod light_field_viewer;
 mod view_emulator;
 
-use light_field::LightField;
+use light_field::{light_field_frustum::LightFieldFrustum, LightField};
 use light_field_viewer::LightFieldViewer;
+
+use std::thread;
 
 fn main() -> VerboseResult<()> {
     let sample_count = VK_SAMPLE_COUNT_1_BIT;
@@ -34,21 +36,35 @@ fn main() -> VerboseResult<()> {
         // .set_openxr_json("/usr/share/openxr/1/openxr_monado.json")
         .build()?;
 
-    let (light_field_1, mut frustum_1) = LightField::new(&context, "data/shot_01")?;
-    let (light_field_2, mut frustum_2) = LightField::new(&context, "data/shot_02")?;
-    let (light_field_3, mut frustum_3) = LightField::new(&context, "data/shot_03")?;
+    let data = ["data/shot_01", "data/shot_02", "data/shot_03"];
 
-    let mut frustum = Vec::new();
-    frustum.append(&mut frustum_1);
-    frustum.append(&mut frustum_2);
-    frustum.append(&mut frustum_3);
+    let mut join_handles: Vec<
+        thread::JoinHandle<VerboseResult<(LightField, Vec<LightFieldFrustum>)>>,
+    > = data
+        .iter()
+        .cloned()
+        .map(|field_path| {
+            let context_clone = context.clone();
 
-    let light_field_viewer = LightFieldViewer::new(
-        &context,
-        sample_count,
-        vec![light_field_1, light_field_2, light_field_3],
-        frustum,
-    )?;
+            thread::spawn(
+                move || -> VerboseResult<(LightField, Vec<LightFieldFrustum>)> {
+                    LightField::new(&context_clone, field_path)
+                },
+            )
+        })
+        .collect();
+
+    let mut frustums = Vec::new();
+    let mut light_fields = Vec::new();
+
+    while let Some(join_handle) = join_handles.pop() {
+        let (light_field, mut frustum) = join_handle.join()??;
+
+        frustums.append(&mut frustum);
+        light_fields.push(light_field);
+    }
+
+    let light_field_viewer = LightFieldViewer::new(&context, sample_count, light_fields, frustums)?;
 
     context.set_context_object(Some(light_field_viewer.clone()))?;
     context.render_core().add_scene(light_field_viewer)?;
