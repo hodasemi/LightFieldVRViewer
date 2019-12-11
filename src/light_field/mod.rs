@@ -1,6 +1,6 @@
 mod alpha_maps;
+pub mod light_field_data;
 pub mod light_field_frustum;
-pub mod light_field_renderer;
 mod ranges;
 
 use context::prelude::*;
@@ -10,8 +10,8 @@ use super::config::Config;
 use super::light_field_viewer::{DEFAULT_FORWARD, UP};
 
 use alpha_maps::AlphaMaps;
+use light_field_data::{LightFieldData, Plane};
 use light_field_frustum::LightFieldFrustum;
-use light_field_renderer::LightFieldRenderer;
 
 use cgmath::{Array, InnerSpace, Vector3};
 
@@ -24,17 +24,12 @@ const EPSILON: f32 = 0.5;
 pub struct LightField {
     pub config: Config,
 
-    light_field_renderer: LightFieldRenderer,
+    light_field_data: LightFieldData,
 }
 
 impl LightField {
-    pub fn new(context: &Arc<Context>, dir: &str) -> VerboseResult<(Self, Vec<LightFieldFrustum>)> {
+    pub fn new(context: &Arc<Context>, dir: &str) -> VerboseResult<Self> {
         let config = Config::load(&format!("{}/parameters.cfg", dir))?;
-
-        // let mut input_images = vec![
-        //     vec![None; config.extrinsics.vertical_camera_count as usize];
-        //     config.extrinsics.horizontal_camera_count as usize
-        // ];
 
         let mut threads = Vec::with_capacity(
             (config.extrinsics.horizontal_camera_count * config.extrinsics.vertical_camera_count)
@@ -157,9 +152,9 @@ impl LightField {
             image_data.push(thread.join()??);
         }
 
-        let light_field_renderer = LightFieldRenderer::new(
+        let light_field_data = LightFieldData::new(
             context,
-            frustums.clone(),
+            frustums,
             image_data,
             (
                 config.extrinsics.horizontal_camera_count as usize,
@@ -170,24 +165,14 @@ impl LightField {
 
         println!("finished loading light field {}", dir);
 
-        Ok((
-            LightField {
-                config,
-                light_field_renderer,
-            },
-            frustums,
-        ))
+        Ok(LightField {
+            config,
+            light_field_data,
+        })
     }
 
-    pub fn render(
-        &self,
-        command_buffer: &Arc<CommandBuffer>,
-        transform_descriptor: &Arc<DescriptorSet>,
-    ) -> VerboseResult<()> {
-        self.light_field_renderer
-            .render(command_buffer, transform_descriptor)?;
-
-        Ok(())
+    pub fn into_data(self) -> Vec<Plane> {
+        self.light_field_data.into_data()
     }
 
     #[inline]
