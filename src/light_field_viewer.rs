@@ -25,6 +25,8 @@ pub struct LightFieldViewer {
 
     view_buffers: TargetMode<Arc<Buffer<VRTransformations>>>,
     transform_descriptor: TargetMode<Arc<DescriptorSet>>,
+    output_image_descriptor: TargetMode<Arc<DescriptorSet>>,
+    as_descriptor: Arc<DescriptorSet>,
 
     ray_tracing_pipeline: Arc<Pipeline>,
     sbt: ShaderBindingTable,
@@ -50,8 +52,6 @@ impl LightFieldViewer {
         let view_buffers = Self::create_view_buffers(context)?;
 
         let transform_descriptor = Self::create_transform_descriptor(context, &view_buffers)?;
-        // let light_field_desc_layout =
-        //     LightFieldRenderer::descriptor_layout(context.device().clone())?;
 
         let desc = match &transform_descriptor {
             TargetMode::Single(desc) => desc,
@@ -60,20 +60,24 @@ impl LightFieldViewer {
 
         let device = context.device();
 
-        let first_desc_layout = DescriptorSetLayout::builder()
+        let as_descriptor = Self::create_as_descriptor(
+            context.device(),
+            &tlas,
+            &primary_buffer,
+            &secondary_buffer,
+        )?;
+
+        let output_image_desc_layout = DescriptorSetLayout::builder()
             .add_layout_binding(
                 0,
-                VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV,
-                VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
-                0,
-            )
-            .add_layout_binding(
-                1,
                 VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
                 VK_SHADER_STAGE_RAYGEN_BIT_NV,
                 0,
             )
-            .build(device.clone())?;
+            .build(context.device().clone())?;
+
+        let output_image_descriptor =
+            Self::create_output_image_descriptor(context, &output_image_desc_layout)?;
 
         let (pipeline, sbt) = Pipeline::new_ray_tracing()
             .add_shader(
@@ -100,12 +104,15 @@ impl LightFieldViewer {
                 )?],
                 None,
             )
-            .build(device, &[&first_desc_layout, desc])?;
+            .build(device, &[&as_descriptor, desc, &output_image_desc_layout])?;
 
         Ok(Arc::new(LightFieldViewer {
             context: context.clone(),
+
             view_buffers,
             transform_descriptor,
+            output_image_descriptor,
+            as_descriptor,
 
             ray_tracing_pipeline: pipeline,
             sbt,
@@ -173,63 +180,64 @@ impl TScene for LightFieldViewer {
         indices: &TargetMode<usize>,
         transforms: &Option<TargetMode<VRTransformations>>,
     ) -> VerboseResult<()> {
-        // match (indices, &self.view_buffers, &self.transform_descriptor) {
-        //     (
-        //         TargetMode::Single(index),
-        //         TargetMode::Single(view_buffer),
-        //         TargetMode::Single(example_descriptor),
-        //     ) => {
-        //         Self::render(
-        //             *index,
-        //             render_target,
-        //             pipeline,
-        //             command_buffer,
-        //             view_buffer,
-        //             &self.view_emulator.simulation_transform(),
-        //             example_descriptor,
-        //             &self.light_fields,
-        //             coordinate_system,
-        //             frustum_renderer,
-        //         )?;
-        //     }
-        //     (
-        //         TargetMode::Stereo(left_index, right_index),
-        //         TargetMode::Stereo(left_view_buffer, right_view_buffer),
-        //         TargetMode::Stereo(left_descriptor, right_descriptor),
-        //     ) => {
-        //         let (left_transform, right_transform) = transforms
-        //             .as_ref()
-        //             .ok_or("no transforms present")?
-        //             .stereo()?;
+        match (
+            indices,
+            &self.view_buffers,
+            &self.transform_descriptor,
+            &self.output_image_descriptor,
+            &self.context.render_core().images(),
+        ) {
+            (
+                TargetMode::Single(index),
+                TargetMode::Single(view_buffer),
+                TargetMode::Single(example_descriptor),
+                TargetMode::Single(image_descriptor),
+                TargetMode::Single(target_images),
+            ) => {
+                self.render(
+                    *index,
+                    command_buffer,
+                    view_buffer,
+                    &self.view_emulator.simulation_transform(),
+                    example_descriptor,
+                    target_images,
+                    image_descriptor,
+                )?;
+            }
+            (
+                TargetMode::Stereo(left_index, right_index),
+                TargetMode::Stereo(left_view_buffer, right_view_buffer),
+                TargetMode::Stereo(left_descriptor, right_descriptor),
+                TargetMode::Stereo(left_image_descriptor, right_image_descriptor),
+                TargetMode::Stereo(left_image, right_image),
+            ) => {
+                let (left_transform, right_transform) = transforms
+                    .as_ref()
+                    .ok_or("no transforms present")?
+                    .stereo()?;
 
-        //         Self::render(
-        //             *left_index,
-        //             left_render_target,
-        //             left_pipeline,
-        //             command_buffer,
-        //             left_view_buffer,
-        //             left_transform,
-        //             left_descriptor,
-        //             &self.light_fields,
-        //             left_coordinate_system,
-        //             left_frustum_renderer,
-        //         )?;
+                self.render(
+                    *left_index,
+                    command_buffer,
+                    left_view_buffer,
+                    left_transform,
+                    left_descriptor,
+                    left_image,
+                    left_image_descriptor,
+                )?;
 
-        //         Self::render(
-        //             *right_index,
-        //             right_render_target,
-        //             right_pipeline,
-        //             command_buffer,
-        //             right_view_buffer,
-        //             right_transform,
-        //             right_descriptor,
-        //             &self.light_fields,
-        //             right_coordinate_system,
-        //             right_frustum_renderer,
-        //         )?;
-        //     }
-        //     _ => create_error!("invalid target mode setup"),
-        // }
+                self.render(
+                    *right_index,
+                    command_buffer,
+                    right_view_buffer,
+                    right_transform,
+                    right_descriptor,
+                    right_image,
+                    right_image_descriptor,
+                )?;
+            }
+            _ => create_error!("invalid target mode setup"),
+        }
 
         Ok(())
     }
@@ -248,17 +256,40 @@ impl LightFieldViewer {
         command_buffer: &Arc<CommandBuffer>,
         view_buffer: &Arc<Buffer<VRTransformations>>,
         transform: &VRTransformations,
-        descriptor_set: &Arc<DescriptorSet>,
+        view_descriptor_set: &Arc<DescriptorSet>,
+        images: &Vec<Arc<Image>>,
+        image_descriptor: &Arc<DescriptorSet>,
     ) -> VerboseResult<()> {
         // update
         {
             let mut mapped = view_buffer.map_complete()?;
-            mapped[0] = *transform;
+            mapped[0] = VRTransformations {
+                proj: transform
+                    .proj
+                    .invert()
+                    .expect("could not invert projection matrix"),
+                view: transform
+                    .view
+                    .invert()
+                    .expect("could not invert view matrix"),
+            };
         }
 
+        let image = &images[index];
+        image_descriptor.update(&[DescriptorWrite::storage_images(0, &[image])
+            .change_image_layout(VK_IMAGE_LAYOUT_GENERAL)]);
+
+        command_buffer.set_full_image_layout(image, VK_IMAGE_LAYOUT_GENERAL);
+
         command_buffer.bind_pipeline(&self.ray_tracing_pipeline)?;
-        // command_buffer.bind_descriptor_sets_minimal(&descs)?;
-        // command_buffer.trace_rays_sbt(&self.sbt, self.width, self.height, 1);
+        command_buffer.bind_descriptor_sets_minimal(&[
+            &self.as_descriptor,
+            view_descriptor_set,
+            image_descriptor,
+        ])?;
+        command_buffer.trace_rays_sbt(&self.sbt, image.width(), image.height(), 1);
+
+        command_buffer.set_full_image_layout(image, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
         Ok(())
     }
@@ -289,6 +320,68 @@ impl LightFieldViewer {
                     .build(context.device().clone())?,
             )),
         }
+    }
+
+    fn create_output_image_descriptor(
+        context: &Arc<Context>,
+        layout: &Arc<DescriptorSetLayout>,
+    ) -> VerboseResult<TargetMode<Arc<DescriptorSet>>> {
+        let render_core = context.render_core();
+
+        let create_desc = || {
+            let pool = DescriptorPool::builder()
+                .set_layout(layout.clone())
+                .build(context.device().clone())?;
+
+            DescriptorPool::prepare_set(&pool).allocate()
+        };
+
+        match render_core.images() {
+            TargetMode::Single(_) => Ok(TargetMode::Single(create_desc()?)),
+            TargetMode::Stereo(_, _) => Ok(TargetMode::Stereo(create_desc()?, create_desc()?)),
+        }
+    }
+
+    fn create_as_descriptor(
+        device: &Arc<Device>,
+        tlas: &Arc<AccelerationStructure>,
+        primary_buffer: &Arc<Buffer<PlaneVertex>>,
+        secondary_buffer: &Arc<Buffer<PlaneImageInfo>>,
+    ) -> VerboseResult<Arc<DescriptorSet>> {
+        let descriptor_set_layout = DescriptorSetLayout::builder()
+            .add_layout_binding(
+                0,
+                VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV,
+                VK_SHADER_STAGE_RAYGEN_BIT_NV,
+                0,
+            )
+            .add_layout_binding(
+                1,
+                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
+                0,
+            )
+            .add_layout_binding(
+                2,
+                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
+                0,
+            )
+            .build(device.clone())?;
+
+        let descriptor_pool = DescriptorPool::builder()
+            .set_layout(descriptor_set_layout)
+            .build(device.clone())?;
+
+        let descriptor_set = DescriptorPool::prepare_set(&descriptor_pool).allocate()?;
+
+        descriptor_set.update(&[
+            DescriptorWrite::acceleration_structures(0, &[tlas]),
+            DescriptorWrite::storage_buffers(1, &[primary_buffer]),
+            DescriptorWrite::storage_buffers(2, &[secondary_buffer]),
+        ]);
+
+        Ok(descriptor_set)
     }
 
     fn create_transform_descriptor(

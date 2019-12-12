@@ -2,9 +2,7 @@
 #extension GL_NV_ray_tracing : require
 #extension GL_EXT_nonuniform_qualifier : require
 
-layout(set = 0, binding = 0) uniform accelerationStructureNV tlas;
-
-layout(set = 2, binding = 0) readonly buffer PlaneVertices {
+layout(set = 0, binding = 1) readonly buffer PlaneVertices {
     vec3 position;
     float first_index;
 
@@ -12,7 +10,7 @@ layout(set = 2, binding = 0) readonly buffer PlaneVertices {
     float last_index;
 } plane_vertices[ ];
 
-layout(set = 2, binding = 1) readonly buffer PlaneImageInfos {
+layout(set = 0, binding = 2) readonly buffer PlaneImageInfos {
     float left;
     float right;
     float top;
