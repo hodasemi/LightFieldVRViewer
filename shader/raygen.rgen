@@ -27,7 +27,30 @@ void main() {
 
     vec3 color = vec3(0.0);
 
-    // TODO: ray casting
+    uint ray_flags = gl_RayFlagsOpaqueNV;
+    uint cull_mask = 0xff;
+    const int pay_load_index = 0;
+    int hit_shader_index = 0;
+    int miss_shader_index = 0;
+    int sbt_record_stride = 0;
+    float tmin = 0.001;
+    float tmax = 10000.0;
+
+    traceNV(
+        tlas,
+        ray_flags,
+        cull_mask,
+        hit_shader_index,
+        sbt_record_stride,
+        miss_shader_index,
+        origin.xyz,
+        tmin,
+        direction.xyz,
+        tmax,
+        pay_load_index
+    );
+
+    color = pay_load.color.xyz;
 
     imageStore(output_image, ivec2(gl_LaunchIDNV.xy), vec4(color, 1.0));
 }

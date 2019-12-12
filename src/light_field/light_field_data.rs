@@ -8,12 +8,12 @@ use image::{ImageBuffer, Rgba};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-const MAX_IMAGES_PER_LIGHT_FIELD: u32 = 1024;
-
+#[derive(Debug)]
 pub struct LightFieldData {
     data: Vec<Plane>,
 }
 
+#[derive(Debug, Clone)]
 pub struct Plane {
     pub left_top: Vector3<f32>,
     pub left_bottom: Vector3<f32>,
@@ -23,6 +23,7 @@ pub struct Plane {
     pub content: Vec<(Arc<Image>, PlaneImageRatios, Vector2<f32>)>,
 }
 
+#[derive(Debug, Clone)]
 pub struct PlaneImageRatios {
     pub left: f32,
     pub right: f32,
@@ -30,6 +31,7 @@ pub struct PlaneImageRatios {
     pub bottom: f32,
 }
 
+#[derive(Debug)]
 struct PlaneImage {
     image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     frustum: (usize, usize),

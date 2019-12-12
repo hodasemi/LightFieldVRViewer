@@ -34,7 +34,7 @@ fn main() -> VerboseResult<()> {
         .build()?;
 
     // let data = ["data/shot_01", "data/shot_02", "data/shot_03"];
-    let data = [];
+    let data = ["data/shot_01"];
 
     let mut join_handles: Vec<thread::JoinHandle<VerboseResult<LightField>>> = data
         .iter()

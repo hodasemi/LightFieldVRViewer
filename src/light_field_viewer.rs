@@ -5,12 +5,14 @@ use std::cell::{Cell, RefCell};
 use std::ops::Deref;
 use std::sync::Arc;
 
-use cgmath::{vec3, vec4, Deg, Vector3};
+use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
 
 use super::debug::{coordinate_system::CoordinateSystem, frustums::FrustumRenderer};
 use super::{
     light_field::{
-        light_field_data::LightFieldData, light_field_frustum::LightFieldFrustum, LightField,
+        light_field_data::{Plane, PlaneImageRatios},
+        light_field_frustum::LightFieldFrustum,
+        LightField,
     },
     view_emulator::ViewEmulator,
 };
@@ -27,8 +29,13 @@ pub struct LightFieldViewer {
     ray_tracing_pipeline: Arc<Pipeline>,
     sbt: ShaderBindingTable,
 
-    // blas: Arc<AccelerationStructure>,
-    // tlas: Arc<AccelerationStructure>,
+    // scene data
+    blas: Arc<AccelerationStructure>,
+    tlas: Arc<AccelerationStructure>,
+    images: Vec<Arc<Image>>,
+    primary_buffer: Arc<Buffer<PlaneVertex>>,
+    secondary_buffer: Arc<Buffer<PlaneImageInfo>>,
+
     view_emulator: ViewEmulator,
 
     last_time_stemp: Cell<f64>,
@@ -37,6 +44,9 @@ pub struct LightFieldViewer {
 
 impl LightFieldViewer {
     pub fn new(context: &Arc<Context>, light_fields: Vec<LightField>) -> VerboseResult<Arc<Self>> {
+        let (blas, tlas, primary_buffer, secondary_buffer, images) =
+            Self::create_scene_data(context, light_fields)?;
+
         let view_buffers = Self::create_view_buffers(context)?;
 
         let transform_descriptor = Self::create_transform_descriptor(context, &view_buffers)?;
@@ -99,6 +109,12 @@ impl LightFieldViewer {
 
             ray_tracing_pipeline: pipeline,
             sbt,
+
+            blas,
+            tlas,
+            images,
+            primary_buffer,
+            secondary_buffer,
 
             view_emulator: ViewEmulator::new(context, Deg(45.0), 2.5),
 
@@ -322,4 +338,165 @@ impl LightFieldViewer {
 
         Ok(DescriptorPool::prepare_set(&descriptor_pool).allocate()?)
     }
+
+    fn create_scene_data(
+        context: &Arc<Context>,
+        mut light_fields: Vec<LightField>,
+    ) -> VerboseResult<(
+        Arc<AccelerationStructure>,
+        Arc<AccelerationStructure>,
+        Arc<Buffer<PlaneVertex>>,
+        Arc<Buffer<PlaneImageInfo>>,
+        Vec<Arc<Image>>,
+    )> {
+        let mut primary_data = Vec::new();
+        let mut secondary_data = Vec::new();
+        let mut images = Vec::new();
+
+        while let Some(light_field) = light_fields.pop() {
+            let mut planes = light_field.into_data();
+
+            while let Some(mut plane) = planes.pop() {
+                // get first index
+                let first_index = secondary_data.len();
+
+                // add plane contents to buffers
+                while let Some((image, ratios, center)) = plane.content.pop() {
+                    // get image index and add image
+                    let image_index = images.len() as u32;
+                    images.push(image);
+
+                    secondary_data.push(PlaneImageInfo {
+                        ratios,
+                        center,
+                        image_index,
+
+                        padding: [0],
+                    });
+                }
+
+                // get last index
+                let last_index = secondary_data.len();
+
+                let plane_normal = (plane.left_top - plane.left_bottom)
+                    .cross(plane.left_bottom - plane.right_bottom)
+                    .normalize();
+
+                // create vertex data
+                primary_data.push(PlaneVertex {
+                    position_first: plane.left_bottom.extend(first_index as f32),
+                    normal_last: plane_normal.extend(last_index as f32),
+                });
+
+                primary_data.push(PlaneVertex {
+                    position_first: plane.left_top.extend(first_index as f32),
+                    normal_last: plane_normal.extend(last_index as f32),
+                });
+
+                primary_data.push(PlaneVertex {
+                    position_first: plane.right_bottom.extend(first_index as f32),
+                    normal_last: plane_normal.extend(last_index as f32),
+                });
+
+                primary_data.push(PlaneVertex {
+                    position_first: plane.right_bottom.extend(first_index as f32),
+                    normal_last: plane_normal.extend(last_index as f32),
+                });
+
+                primary_data.push(PlaneVertex {
+                    position_first: plane.left_top.extend(first_index as f32),
+                    normal_last: plane_normal.extend(last_index as f32),
+                });
+
+                primary_data.push(PlaneVertex {
+                    position_first: plane.right_top.extend(first_index as f32),
+                    normal_last: plane_normal.extend(last_index as f32),
+                });
+            }
+        }
+
+        let command_buffer = context.render_core().allocate_primary_buffer()?;
+
+        let primary_cpu_buffer = Buffer::builder()
+            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+            .set_usage(
+                VK_BUFFER_USAGE_RAY_TRACING_BIT_NV
+                    | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                    | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            )
+            .set_data(&primary_data)
+            .build(context.device().clone())?;
+
+        let primary_gpu_buffer =
+            Buffer::into_device_local(primary_cpu_buffer, &command_buffer, context.queue())?;
+
+        let secondary_cpu_buffer = Buffer::builder()
+            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+            .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
+            .set_data(&secondary_data)
+            .build(context.device().clone())?;
+
+        let secondary_gpu_buffer =
+            Buffer::into_device_local(secondary_cpu_buffer, &command_buffer, context.queue())?;
+
+        let blas = AccelerationStructure::bottom_level()
+            .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
+            .add_vertices(&primary_gpu_buffer, None)
+            .build(context.device().clone())?;
+
+        let tlas = AccelerationStructure::top_level()
+            .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
+            .add_instance(
+                &blas,
+                Matrix4::identity(),
+                VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV,
+            )
+            .build(context.device().clone())?;
+
+        command_buffer.begin(VkCommandBufferBeginInfo::new(
+            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        ))?;
+
+        blas.generate(&command_buffer)?;
+        tlas.generate(&command_buffer)?;
+
+        command_buffer.end()?;
+
+        let submit = SubmitInfo::default().add_command_buffer(&command_buffer);
+        let fence = Fence::builder().build(context.device().clone())?;
+
+        let queue_lock = context.queue().lock()?;
+        queue_lock.submit(Some(&fence), &[submit])?;
+
+        context
+            .device()
+            .wait_for_fences(&[&fence], true, 1_000_000_000)?;
+
+        Ok((blas, tlas, primary_gpu_buffer, secondary_gpu_buffer, images))
+    }
+}
+
+// Indices are [First Index; Last Index[
+#[derive(Debug, Clone)]
+pub struct PlaneVertex {
+    // (Position (vec3), First Index (f32))
+    position_first: Vector4<f32>,
+
+    // (Normal (vec3), Last Index (f32))
+    normal_last: Vector4<f32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlaneImageInfo {
+    // 4 * f32 = 16 Byte
+    ratios: PlaneImageRatios,
+
+    // 2 * f32 = 8 Byte
+    center: Vector2<f32>,
+
+    // u32 = 4 Byte
+    image_index: u32,
+
+    // 4 padding Byte are needed
+    padding: [u32; 1],
 }
