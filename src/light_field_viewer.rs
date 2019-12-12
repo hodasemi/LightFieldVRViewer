@@ -1,19 +1,13 @@
 use context::prelude::*;
 use context::ContextObject;
 
-use std::cell::{Cell, RefCell};
-use std::ops::Deref;
+use std::cell::Cell;
 use std::sync::Arc;
 
-use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
+use cgmath::{vec3, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
 
-use super::debug::{coordinate_system::CoordinateSystem, frustums::FrustumRenderer};
 use super::{
-    light_field::{
-        light_field_data::{Plane, PlaneImageRatios},
-        light_field_frustum::LightFieldFrustum,
-        LightField,
-    },
+    light_field::{light_field_data::PlaneImageRatios, LightField},
     view_emulator::ViewEmulator,
 };
 
@@ -32,11 +26,11 @@ pub struct LightFieldViewer {
     sbt: ShaderBindingTable,
 
     // scene data
-    blas: Arc<AccelerationStructure>,
-    tlas: Arc<AccelerationStructure>,
-    images: Vec<Arc<Image>>,
-    primary_buffer: Arc<Buffer<PlaneVertex>>,
-    secondary_buffer: Arc<Buffer<PlaneImageInfo>>,
+    _blas: Arc<AccelerationStructure>,
+    _tlas: Arc<AccelerationStructure>,
+    _images: Vec<Arc<Image>>,
+    _primary_buffer: Arc<Buffer<PlaneVertex>>,
+    _secondary_buffer: Arc<Buffer<PlaneImageInfo>>,
 
     view_emulator: ViewEmulator,
 
@@ -117,11 +111,11 @@ impl LightFieldViewer {
             ray_tracing_pipeline: pipeline,
             sbt,
 
-            blas,
-            tlas,
-            images,
-            primary_buffer,
-            secondary_buffer,
+            _blas: blas,
+            _tlas: tlas,
+            _images: images,
+            _primary_buffer: primary_buffer,
+            _secondary_buffer: secondary_buffer,
 
             view_emulator: ViewEmulator::new(context, Deg(45.0), 2.5),
 
