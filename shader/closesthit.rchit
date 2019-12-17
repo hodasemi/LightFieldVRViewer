@@ -95,19 +95,48 @@ Plane get_plane() {
     return plane;
 }
 
+vec3 calculate_orthogonal_point(Plane plane) {
+    // Basic line - plane - intersection
+    float numerator = dot((plane.top_left - gl_WorldRayOriginNV), plane.normal);
+    float denominator = dot(-plane.normal, plane.normal);
+
+    float distance = numerator / denominator;
+
+    return gl_WorldRayOriginNV + (-plane.normal * distance);
+}
+
 PlaneBarycentrics calculate_barycentrics(Plane plane, vec3 point) {
     PlaneBarycentrics barycentrics;
 
     vec3 horizontal_direction = plane.top_right - plane.top_left;
     vec3 vertical_direction = plane.bottom_left - plane.top_left;
 
-    barycentrics.x = distance_to_line(plane.top_left, vertical_direction, point);
-    barycentrics.y = distance_to_line(plane.top_left, horizontal_direction, point);
+    barycentrics.x = distance_to_line(plane.top_left, vertical_direction, point)
+        / length(horizontal_direction);
+
+    barycentrics.y = distance_to_line(plane.top_left, horizontal_direction, point)
+        / length(vertical_direction);
 
     return barycentrics;
 }
 
-vec4 interpolate_images(Plane plane, PlaneBarycentrics barycentrics) {
+vec4 interpolate_images(Plane plane, PlaneBarycentrics hit_bary, PlaneBarycentrics pov_bary) {
+    /*
+                            |                   |
+        Above, Left Side    |       Above       |   Above, Right Side
+                            |                   |
+    ------------------------X-------------------------------------------
+                            |///////////////////|
+            Left Side       |////// Plane //////|       Right Side
+                            |///////////////////|
+    --------------------------------------------------------------------
+                            |                   |
+        Below, Left Side    |       Below       |   Below, Right Side
+                            |                   |
+
+    X - is our reference point
+    */
+
     return vec4(1.0);
 }
 
@@ -116,8 +145,14 @@ void main() {
 
     // TODO: check for backface
 
+    vec3 viewer_point = calculate_orthogonal_point(plane);
     vec3 point = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
 
-    pay_load.color = interpolate_images(plane, calculate_barycentrics(plane, point));
+    pay_load.color = interpolate_images(
+        plane,
+        calculate_barycentrics(plane, point),
+        calculate_barycentrics(plane, viewer_point)
+    );
+
     pay_load.distance = gl_HitTNV;
 }
