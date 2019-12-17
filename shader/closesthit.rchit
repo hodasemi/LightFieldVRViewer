@@ -46,7 +46,12 @@ struct Plane {
 
     float first_index;
     float last_index;
-}
+};
+
+struct PlaneBarycentrics {
+    float x;
+    float y;
+};
 
 layout(location = 0) rayPayloadInNV RayPayload pay_load;
 hitAttributeNV vec2 attribs;
@@ -60,7 +65,7 @@ float distance_to_line(vec3 reference, vec3 normal, vec3 target) {
 Plane get_plane() {
     PlaneVertex v0, v1, v2, v5;
 
-    // v3 and v4 are duplicates, thus not required
+    // v3 and v4 are duplicates, therefore not required
 
     // check which triangle of the plane is hit
     if ((gl_PrimitiveID % 2) == 0) {
@@ -90,11 +95,29 @@ Plane get_plane() {
     return plane;
 }
 
+PlaneBarycentrics calculate_barycentrics(Plane plane, vec3 point) {
+    PlaneBarycentrics barycentrics;
+
+    vec3 horizontal_direction = plane.top_right - plane.top_left;
+    vec3 vertical_direction = plane.bottom_left - plane.top_left;
+
+    barycentrics.x = distance_to_line(plane.top_left, vertical_direction, point);
+    barycentrics.y = distance_to_line(plane.top_left, horizontal_direction, point);
+
+    return barycentrics;
+}
+
+vec4 interpolate_images(Plane plane, PlaneBarycentrics barycentrics) {
+    return vec4(1.0);
+}
+
 void main() {
     Plane plane = get_plane();
 
-    const vec3 barycentrics = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
+    // TODO: check for backface
 
-    pay_load.color = vec4(0.8, 0.8, 0.5, 1.0);
+    vec3 point = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
+
+    pay_load.color = interpolate_images(plane, calculate_barycentrics(plane, point));
     pay_load.distance = gl_HitTNV;
 }
