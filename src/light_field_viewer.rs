@@ -470,31 +470,37 @@ impl LightFieldViewer {
                     .normalize();
 
                 // create vertex data
+                // v0
                 primary_data.push(PlaneVertex {
                     position_first: plane.left_bottom.extend(first_index as f32),
                     normal_last: plane_normal.extend(last_index as f32),
                 });
 
+                // v1
                 primary_data.push(PlaneVertex {
                     position_first: plane.left_top.extend(first_index as f32),
                     normal_last: plane_normal.extend(last_index as f32),
                 });
 
+                // v2
                 primary_data.push(PlaneVertex {
                     position_first: plane.right_bottom.extend(first_index as f32),
                     normal_last: plane_normal.extend(last_index as f32),
                 });
 
+                // v3
                 primary_data.push(PlaneVertex {
                     position_first: plane.right_bottom.extend(first_index as f32),
                     normal_last: plane_normal.extend(last_index as f32),
                 });
 
+                // v4
                 primary_data.push(PlaneVertex {
                     position_first: plane.left_top.extend(first_index as f32),
                     normal_last: plane_normal.extend(last_index as f32),
                 });
 
+                // v5
                 primary_data.push(PlaneVertex {
                     position_first: plane.right_top.extend(first_index as f32),
                     normal_last: plane_normal.extend(last_index as f32),
