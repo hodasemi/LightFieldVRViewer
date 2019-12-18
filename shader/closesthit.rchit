@@ -31,6 +31,8 @@ layout(set = 0, binding = 2) readonly buffer PlaneInfos {
     PlaneImageInfo image_infos[ ];
 } plane_infos;
 
+layout(set = 0, binding = 3) uniform sampler2D images[ ];
+
 struct RayPayload {
 	vec4 color;
 	float distance;
@@ -120,7 +122,7 @@ PlaneBarycentrics calculate_barycentrics(Plane plane, vec3 point) {
     return barycentrics;
 }
 
-vec4 interpolate_images(Plane plane, PlaneBarycentrics hit_bary, PlaneBarycentrics pov_bary) {
+vec4 interpolate_images(Plane plane, PlaneBarycentrics pov_bary) {
     /*
                             |                   |
         Above, Left Side    |       Above       |   Above, Right Side
@@ -137,6 +139,57 @@ vec4 interpolate_images(Plane plane, PlaneBarycentrics hit_bary, PlaneBarycentri
     X - is our reference point
     */
 
+    // check for Above
+    if (pov_bary.y < 0.0) {
+        // check horizontal axis
+        if (pov_bary.x < 0.0) {
+            // Above, Left Side
+
+            return vec4(1.0, 1.0, 0.0, 1.0);
+        } else if (pov_bary.x > 1.0) {
+            // Above, Right Side
+
+            return vec4(1.0, 0.0, 1.0, 1.0);
+        } else {
+            // Above Center
+
+            return vec4(1.0, 0.0, 0.0, 1.0);
+        }
+    }
+    // check for below
+    else if (pov_bary.y > 1.0) {
+        // check horizontal axis
+        if (pov_bary.x < 0.0) {
+            // Below, Left Side
+
+            return vec4(0.0, 1.0, 1.0, 1.0);
+        } else if (pov_bary.x > 1.0) {
+            // Below, Right Side
+
+            return vec4(0.5, 1.0, 0.5, 1.0);
+        } else {
+            // Below Center
+
+            return vec4(0.0, 1.0, 0.0, 1.0);
+        }
+    }
+    // we are in the center, vertically
+    else {
+        // check horizontal axis
+        if (pov_bary.x < 0.0) {
+            // Left Side
+
+            return vec4(0.0, 0.5, 1.0, 1.0);
+        } else if (pov_bary.x > 1.0) {
+            // Right Side
+
+            return vec4(0.0, 0.5, 1.0, 1.0);
+        } else {
+            // We hit the plane
+        }
+    }
+
+    // dummy
     return vec4(1.0);
 }
 
@@ -146,11 +199,9 @@ void main() {
     // TODO: check for backface
 
     vec3 viewer_point = calculate_orthogonal_point(plane);
-    vec3 point = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
 
     pay_load.color = interpolate_images(
         plane,
-        calculate_barycentrics(plane, point),
         calculate_barycentrics(plane, viewer_point)
     );
 

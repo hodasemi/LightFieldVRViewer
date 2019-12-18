@@ -59,6 +59,7 @@ impl LightFieldViewer {
             &tlas,
             &primary_buffer,
             &secondary_buffer,
+            &images,
         )?;
 
         let output_image_desc_layout = DescriptorSetLayout::builder()
@@ -341,6 +342,7 @@ impl LightFieldViewer {
         tlas: &Arc<AccelerationStructure>,
         primary_buffer: &Arc<Buffer<PlaneVertex>>,
         secondary_buffer: &Arc<Buffer<PlaneImageInfo>>,
+        images: &Vec<Arc<Image>>,
     ) -> VerboseResult<Arc<DescriptorSet>> {
         let descriptor_set_layout = DescriptorSetLayout::builder()
             .add_layout_binding(
@@ -361,6 +363,13 @@ impl LightFieldViewer {
                 VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
                 0,
             )
+            .add_layout_binding(
+                3,
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
+                VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT,
+            )
+            .change_descriptor_count(images.len() as u32)
             .build(device.clone())?;
 
         let descriptor_pool = DescriptorPool::builder()
@@ -369,10 +378,13 @@ impl LightFieldViewer {
 
         let descriptor_set = DescriptorPool::prepare_set(&descriptor_pool).allocate()?;
 
+        let image_refs: Vec<&Arc<Image>> = images.iter().map(|image| image).collect();
+
         descriptor_set.update(&[
             DescriptorWrite::acceleration_structures(0, &[tlas]),
             DescriptorWrite::storage_buffers(1, &[primary_buffer]),
             DescriptorWrite::storage_buffers(2, &[secondary_buffer]),
+            DescriptorWrite::combined_samplers(3, &image_refs),
         ]);
 
         Ok(descriptor_set)
