@@ -8,21 +8,29 @@
             "label": "Run",
             "command": "cargo run --release",
             "args": [],
-            "problemMatcher": [
-                "$rustc"
-            ],
             "presentation": {
                 "clear": true
-            }
+            },
+            "linux": {
+                "problemMatcher": [
+                    "$rustc"
+                ]
+            },
+            "problemMatcher": []
         },
         {
             "type": "shell",
             "label": "Update Dependencies",
             "command": "cargo update",
             "args": [],
-            "problemMatcher": [
-                "$rustc"
-            ]
+            "problemMatcher": []
+        },
+        {
+            "type": "shell",
+            "label": "Build",
+            "command": "cargo build",
+            "args": [],
+            "problemMatcher": []
         }
     ]
 }
