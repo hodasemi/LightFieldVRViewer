@@ -46,8 +46,8 @@ struct Plane {
 
     vec3 normal;
 
-    float first_index;
-    float last_index;
+    uint first_index;
+    uint last_index;
 };
 
 struct PlaneBarycentrics {
@@ -58,6 +58,7 @@ struct PlaneBarycentrics {
 layout(location = 0) rayPayloadInNV RayPayload pay_load;
 hitAttributeNV vec2 attribs;
 
+// simple
 float distance_to_line(vec3 reference, vec3 normal, vec3 target) {
     return dot((target - reference), normal) / length(normal);
 }
@@ -91,14 +92,14 @@ Plane get_plane() {
 
     plane.normal = v0.normal;
 
-    plane.first_index = v0.first_index;
-    plane.last_index = v0.last_index;
+    plane.first_index = uint(v0.first_index);
+    plane.last_index = uint(v0.last_index);
 
     return plane;
 }
 
+// Basic line - plane - intersection
 vec3 calculate_orthogonal_point(Plane plane) {
-    // Basic line - plane - intersection
     float numerator = dot((plane.top_left - gl_WorldRayOriginNV), plane.normal);
     float denominator = dot(-plane.normal, plane.normal);
 
@@ -107,6 +108,7 @@ vec3 calculate_orthogonal_point(Plane plane) {
     return gl_WorldRayOriginNV + (-plane.normal * distance);
 }
 
+// calculate barycentrics of point in reference to the plane
 PlaneBarycentrics calculate_barycentrics(Plane plane, vec3 point) {
     PlaneBarycentrics barycentrics;
 
@@ -122,7 +124,136 @@ PlaneBarycentrics calculate_barycentrics(Plane plane, vec3 point) {
     return barycentrics;
 }
 
-vec4 interpolate_images(Plane plane, PlaneBarycentrics pov_bary) {
+PlaneImageInfo find_closest_bottom_right(uint start_index, uint end_index, PlaneBarycentrics bary) {
+    float mininal_distance = 2.0;
+    PlaneImageInfo image_info;
+
+    for (uint i = start_index; i < end_index; i++) {
+        PlaneImageInfo info = plane_infos.image_infos[nonuniformEXT(i)];
+
+        float x_diff = info.center.x - bary.x;
+
+        // skip everything left of current x
+        if (x_diff < 0.0) {
+            continue;
+        }
+
+        float y_diff = info.center.y - bary.y;
+
+        // skip everything above the current y
+        if (y_diff < 0.0) {
+            continue;
+        }
+
+        float new_distance = x_diff + y_diff;
+
+        if (new_distance < mininal_distance) {
+            mininal_distance = new_distance;
+            image_info = info;
+        }
+    }
+
+    return image_info;
+}
+
+PlaneImageInfo find_closest_top_right(uint start_index, uint end_index, PlaneBarycentrics bary) {
+    float mininal_distance = 2.0;
+    PlaneImageInfo image_info;
+
+    for (uint i = start_index; i < end_index; i++) {
+        PlaneImageInfo info = plane_infos.image_infos[nonuniformEXT(i)];
+
+        float x_diff = info.center.x - bary.x;
+
+        // skip everything left of current x
+        if (x_diff < 0.0) {
+            continue;
+        }
+
+        float y_diff = info.center.y - bary.y;
+
+        // skip everything below the current y
+        if (y_diff > 0.0) {
+            continue;
+        }
+
+        float new_distance = x_diff - y_diff;
+
+        if (new_distance < mininal_distance) {
+            mininal_distance = new_distance;
+            image_info = info;
+        }
+    }
+
+    return image_info;
+}
+
+PlaneImageInfo find_closest_bottom_left(uint start_index, uint end_index, PlaneBarycentrics bary) {
+    float mininal_distance = 2.0;
+    PlaneImageInfo image_info;
+
+    for (uint i = start_index; i < end_index; i++) {
+        PlaneImageInfo info = plane_infos.image_infos[nonuniformEXT(i)];
+
+        float x_diff = info.center.x - bary.x;
+
+        // skip everything right of current x
+        if (x_diff > 0.0) {
+            continue;
+        }
+
+        float y_diff = info.center.y - bary.y;
+
+        // skip everything above the current y
+        if (y_diff < 0.0) {
+            continue;
+        }
+
+        float new_distance = y_diff - x_diff;
+
+        if (new_distance < mininal_distance) {
+            mininal_distance = new_distance;
+            image_info = info;
+        }
+    }
+
+    return image_info;
+}
+
+PlaneImageInfo find_closest_top_left(uint start_index, uint end_index, PlaneBarycentrics bary) {
+    float mininal_distance = 2.0;
+    PlaneImageInfo image_info;
+
+    for (uint i = start_index; i < end_index; i++) {
+        PlaneImageInfo info = plane_infos.image_infos[nonuniformEXT(i)];
+
+        float x_diff = info.center.x - bary.x;
+
+        // skip everything right of current x
+        if (x_diff > 0.0) {
+            continue;
+        }
+
+        float y_diff = info.center.y - bary.y;
+
+        // skip everything below the current y
+        if (y_diff > 0.0) {
+            continue;
+        }
+
+
+        float new_distance = -(x_diff + y_diff);
+
+        if (new_distance < mininal_distance) {
+            mininal_distance = new_distance;
+            image_info = info;
+        }
+    }
+
+    return image_info;
+}
+
+vec4 interpolate_images(Plane plane, PlaneBarycentrics hit_bary, PlaneBarycentrics pov_bary) {
     /*
                             |                   |
         Above, Left Side    |       Above       |   Above, Right Side
@@ -144,8 +275,16 @@ vec4 interpolate_images(Plane plane, PlaneBarycentrics pov_bary) {
         // check horizontal axis
         if (pov_bary.x < 0.0) {
             // Above, Left Side
+            PlaneImageInfo image_info = find_closest_top_left(
+                plane.first_index,
+                plane.last_index,
+                pov_bary
+            );
 
-            return vec4(1.0, 1.0, 0.0, 1.0);
+            float u = (hit_bary.x - image_info.left) / (image_info.right - image_info.left);
+            float v = (hit_bary.y - image_info.top) / (image_info.bottom - image_info.top);
+
+            return texture(images[nonuniformEXT(image_info.image_index)], vec2(u, v));
         } else if (pov_bary.x > 1.0) {
             // Above, Right Side
 
@@ -199,9 +338,11 @@ void main() {
     // TODO: check for backface
 
     vec3 viewer_point = calculate_orthogonal_point(plane);
+    vec3 point = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
 
     pay_load.color = interpolate_images(
         plane,
+        calculate_barycentrics(plane, point),
         calculate_barycentrics(plane, viewer_point)
     );
 
