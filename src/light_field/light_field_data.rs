@@ -168,8 +168,8 @@ impl LightFieldData {
                     bottom: bottom_ratio,
                 };
 
-                let center_x = x + width / 2.0;
-                let center_y = y + height / 2.0;
+                let center_x = (x + width / 2.0) / total_width;
+                let center_y = (y + height / 2.0) / total_height;
 
                 let width = image.image.width();
                 let height = image.image.height();
