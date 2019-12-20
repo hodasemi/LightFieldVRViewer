@@ -2,6 +2,8 @@
 #extension GL_NV_ray_tracing : require
 #extension GL_EXT_nonuniform_qualifier : require
 
+const float INFINITY = 1.0 / 0.0;
+
 struct PlaneVertex {
     vec3 position;
     float first_index;
@@ -48,11 +50,6 @@ struct Plane {
 
     uint first_index;
     uint last_index;
-};
-
-struct PlaneBarycentrics {
-    float x;
-    float y;
 };
 
 layout(location = 0) rayPayloadInNV RayPayload pay_load;
@@ -109,8 +106,8 @@ vec3 calculate_orthogonal_point(Plane plane) {
 }
 
 // calculate barycentrics of point in reference to the plane
-PlaneBarycentrics calculate_barycentrics(Plane plane, vec3 point) {
-    PlaneBarycentrics barycentrics;
+vec2 calculate_barycentrics(Plane plane, vec3 point) {
+    vec2 barycentrics;
 
     vec3 horizontal_direction = plane.top_right - plane.top_left;
     vec3 vertical_direction = plane.bottom_left - plane.top_left;
@@ -124,21 +121,34 @@ PlaneBarycentrics calculate_barycentrics(Plane plane, vec3 point) {
     return barycentrics;
 }
 
-PlaneImageInfo find_closest_bottom_right(uint start_index, uint end_index, PlaneBarycentrics bary) {
-    float mininal_distance = 2.0;
-    PlaneImageInfo image_info;
+bool check_inside(PlaneImageInfo image_info, vec2 bary) {
+    return (bary.x >= image_info.left) &&
+        (bary.x <= image_info.right) &&
+        (bary.y >= image_info.top) &&
+        (bary.y <= image_info.bottom);
+}
 
-    for (uint i = start_index; i < end_index; i++) {
+bool find_closest_bottom_right(
+    Plane plane,
+    vec2 pov_bary,
+    vec2 hit_bary,
+    out PlaneImageInfo image_info,
+    out float distance
+) {
+    distance = INFINITY;
+    bool info_found = false;
+
+    for (uint i = plane.first_index; i < plane.last_index; i++) {
         PlaneImageInfo info = plane_infos.image_infos[nonuniformEXT(i)];
 
-        float x_diff = info.center.x - bary.x;
+        float x_diff = info.center.x - pov_bary.x;
 
         // skip everything left of current x
         if (x_diff < 0.0) {
             continue;
         }
 
-        float y_diff = info.center.y - bary.y;
+        float y_diff = info.center.y - pov_bary.y;
 
         // skip everything above the current y
         if (y_diff < 0.0) {
@@ -147,30 +157,37 @@ PlaneImageInfo find_closest_bottom_right(uint start_index, uint end_index, Plane
 
         float new_distance = x_diff + y_diff;
 
-        if (new_distance < mininal_distance) {
-            mininal_distance = new_distance;
+        if (new_distance < distance && check_inside(info, hit_bary)) {
+            distance = new_distance;
             image_info = info;
+            info_found = true;
         }
     }
 
-    return image_info;
+    return info_found;
 }
 
-PlaneImageInfo find_closest_top_right(uint start_index, uint end_index, PlaneBarycentrics bary) {
-    float mininal_distance = 2.0;
-    PlaneImageInfo image_info;
+bool find_closest_top_right(
+    Plane plane,
+    vec2 pov_bary,
+    vec2 hit_bary,
+    out PlaneImageInfo image_info,
+    out float distance
+) {
+    distance = INFINITY;
+    bool info_found = false;
 
-    for (uint i = start_index; i < end_index; i++) {
+    for (uint i = plane.first_index; i < plane.last_index; i++) {
         PlaneImageInfo info = plane_infos.image_infos[nonuniformEXT(i)];
 
-        float x_diff = info.center.x - bary.x;
+        float x_diff = info.center.x - pov_bary.x;
 
         // skip everything left of current x
         if (x_diff < 0.0) {
             continue;
         }
 
-        float y_diff = info.center.y - bary.y;
+        float y_diff = info.center.y - pov_bary.y;
 
         // skip everything below the current y
         if (y_diff > 0.0) {
@@ -179,30 +196,37 @@ PlaneImageInfo find_closest_top_right(uint start_index, uint end_index, PlaneBar
 
         float new_distance = x_diff - y_diff;
 
-        if (new_distance < mininal_distance) {
-            mininal_distance = new_distance;
+        if (new_distance < distance && check_inside(info, hit_bary)) {
+            distance = new_distance;
             image_info = info;
+            info_found = true;
         }
     }
 
-    return image_info;
+    return info_found;
 }
 
-PlaneImageInfo find_closest_bottom_left(uint start_index, uint end_index, PlaneBarycentrics bary) {
-    float mininal_distance = 2.0;
-    PlaneImageInfo image_info;
+bool find_closest_bottom_left(
+    Plane plane,
+    vec2 pov_bary,
+    vec2 hit_bary,
+    out PlaneImageInfo image_info,
+    out float distance
+) {
+    distance= INFINITY;
+    bool info_found = false;
 
-    for (uint i = start_index; i < end_index; i++) {
+    for (uint i = plane.first_index; i < plane.last_index; i++) {
         PlaneImageInfo info = plane_infos.image_infos[nonuniformEXT(i)];
 
-        float x_diff = info.center.x - bary.x;
+        float x_diff = info.center.x - pov_bary.x;
 
         // skip everything right of current x
         if (x_diff > 0.0) {
             continue;
         }
 
-        float y_diff = info.center.y - bary.y;
+        float y_diff = info.center.y - pov_bary.y;
 
         // skip everything above the current y
         if (y_diff < 0.0) {
@@ -211,49 +235,118 @@ PlaneImageInfo find_closest_bottom_left(uint start_index, uint end_index, PlaneB
 
         float new_distance = y_diff - x_diff;
 
-        if (new_distance < mininal_distance) {
-            mininal_distance = new_distance;
+        if (new_distance < distance && check_inside(info, hit_bary)) {
+            distance = new_distance;
             image_info = info;
+            info_found = true;
         }
     }
 
-    return image_info;
+    return info_found;
 }
 
-PlaneImageInfo find_closest_top_left(uint start_index, uint end_index, PlaneBarycentrics bary) {
-    float mininal_distance = 2.0;
-    PlaneImageInfo image_info;
+bool find_closest_top_left(
+    Plane plane,
+    vec2 pov_bary,
+    vec2 hit_bary,
+    out PlaneImageInfo image_info,
+    out float distance
+) {
+    distance = INFINITY;
+    bool info_found = false;
 
-    for (uint i = start_index; i < end_index; i++) {
+    for (uint i = plane.first_index; i < plane.last_index; i++) {
         PlaneImageInfo info = plane_infos.image_infos[nonuniformEXT(i)];
 
-        float x_diff = info.center.x - bary.x;
+        float x_diff = info.center.x - pov_bary.x;
 
         // skip everything right of current x
         if (x_diff > 0.0) {
             continue;
         }
 
-        float y_diff = info.center.y - bary.y;
+        float y_diff = info.center.y - pov_bary.y;
 
         // skip everything below the current y
         if (y_diff > 0.0) {
             continue;
         }
 
-
         float new_distance = -(x_diff + y_diff);
 
-        if (new_distance < mininal_distance) {
-            mininal_distance = new_distance;
+        if (new_distance < distance && check_inside(info, hit_bary)) {
+            distance = new_distance;
             image_info = info;
+            info_found = true;
         }
     }
 
-    return image_info;
+    return info_found;
 }
 
-vec4 interpolate_images(Plane plane, PlaneBarycentrics hit_bary, PlaneBarycentrics pov_bary) {
+vec2 normalized_uv(PlaneImageInfo image_info, vec2 bary) {
+    float u = (bary.x - image_info.left) / (image_info.right - image_info.left);
+    float v = (bary.y - image_info.top) / (image_info.bottom - image_info.top);
+
+    return vec2(u, v);
+}
+
+vec4 single_image(PlaneImageInfo image_info, vec2 hit_bary) {
+    vec2 uv = normalized_uv(image_info, hit_bary);
+
+    return texture(images[nonuniformEXT(image_info.image_index)], uv);
+}
+
+vec4 two_images(PlaneImageInfo first_info, float first_distance, PlaneImageInfo second_info, float second_distance, vec2 hit_bary) {
+    vec2 first_uv = normalized_uv(first_info, hit_bary);
+    vec2 second_uv = normalized_uv(second_info, hit_bary);
+
+    float total_distance = first_distance + second_distance;
+
+    float first_weight = (total_distance - first_distance) / total_distance;
+    float second_weight = (total_distance - second_distance) / total_distance;
+
+    vec4 first_color = texture(images[nonuniformEXT(first_info.image_index)], first_uv);
+    vec4 second_color = texture(images[nonuniformEXT(second_info.image_index)], second_uv);
+
+    return first_color * first_weight + second_color * second_weight;
+}
+
+float weight(float weight, float total, int amount) {
+    return 1.0 / ((weight / total) / (1.0 / float(amount)));
+}
+
+vec4 four_images(
+    PlaneImageInfo first_info, float first_distance,
+    PlaneImageInfo second_info, float second_distance,
+    PlaneImageInfo third_info, float third_distance,
+    PlaneImageInfo fourth_info, float fourth_distance,
+    vec2 hit_bary
+) {
+    vec2 first_uv = normalized_uv(first_info, hit_bary);
+    vec2 second_uv = normalized_uv(second_info, hit_bary);
+    vec2 third_uv = normalized_uv(third_info, hit_bary);
+    vec2 fourth_uv = normalized_uv(fourth_info, hit_bary);
+
+    vec4 first_color = texture(images[nonuniformEXT(first_info.image_index)], first_uv);
+    vec4 second_color = texture(images[nonuniformEXT(second_info.image_index)], second_uv);
+    vec4 third_color = texture(images[nonuniformEXT(third_info.image_index)], third_uv);
+    vec4 fourth_color = texture(images[nonuniformEXT(fourth_info.image_index)], fourth_uv);
+
+    float total_distance = first_distance + second_distance + third_distance + fourth_distance;
+
+    float first_weight = weight(first_distance, total_distance, 4);
+    float second_weight = weight(second_distance, total_distance, 4);
+    float third_weight = weight(third_distance, total_distance, 4);
+    float fourth_weight = weight(fourth_distance, total_distance, 4);
+
+    return first_color * first_weight
+        + second_color * second_weight
+        + third_color * third_weight
+        + fourth_color * fourth_weight;
+}
+
+vec4 interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
     /*
                             |                   |
         Above, Left Side    |       Above       |   Above, Right Side
@@ -274,57 +367,178 @@ vec4 interpolate_images(Plane plane, PlaneBarycentrics hit_bary, PlaneBarycentri
     if (pov_bary.y < 0.0) {
         // check horizontal axis
         if (pov_bary.x < 0.0) {
-            // Above, Left Side
-            PlaneImageInfo image_info = find_closest_top_left(
-                plane.first_index,
-                plane.last_index,
-                pov_bary
-            );
+            // --------------------- Above, Left Side ---------------------
+            PlaneImageInfo image_info;
+            float distance;
 
-            float u = (hit_bary.x - image_info.left) / (image_info.right - image_info.left);
-            float v = (hit_bary.y - image_info.top) / (image_info.bottom - image_info.top);
-
-            return texture(images[nonuniformEXT(image_info.image_index)], vec2(u, v));
+            if (find_closest_bottom_right(plane, pov_bary, hit_bary, image_info, distance)) {
+                return single_image(image_info, hit_bary);
+            }
         } else if (pov_bary.x > 1.0) {
-            // Above, Right Side
+            // --------------------- Above, Right Side ---------------------
+            PlaneImageInfo image_info;
+            float distance;
 
-            return vec4(1.0, 0.0, 1.0, 1.0);
+            if (find_closest_bottom_left(plane, pov_bary, hit_bary, image_info, distance)) {
+                return single_image(image_info, hit_bary);
+            }
         } else {
-            // Above Center
+            // --------------------- Above Center ---------------------
+            PlaneImageInfo left_image_info;
+            PlaneImageInfo right_image_info;
+            float left_distance;
+            float right_distance;
 
-            return vec4(1.0, 0.0, 0.0, 1.0);
+            // get both image infos
+            bool left_found = find_closest_bottom_left(plane, pov_bary, hit_bary, left_image_info, left_distance);
+            bool right_found = find_closest_bottom_right(plane, pov_bary, hit_bary, right_image_info, right_distance);
+
+            if (left_found && right_found) {
+                return two_images(left_image_info, left_distance, right_image_info, right_distance, hit_bary);
+            } else if (left_found && !right_found) {
+                return single_image(left_image_info, hit_bary);
+            } else if (!left_found && right_found) {
+                return single_image(right_image_info, hit_bary);
+            }
         }
     }
     // check for below
     else if (pov_bary.y > 1.0) {
         // check horizontal axis
         if (pov_bary.x < 0.0) {
-            // Below, Left Side
+            // --------------------- Below, Left Side ---------------------
+            PlaneImageInfo image_info;
+            float distance;
 
-            return vec4(0.0, 1.0, 1.0, 1.0);
+            if (find_closest_top_right(plane, pov_bary, hit_bary, image_info, distance)) {
+                return single_image(image_info, hit_bary);
+            }
         } else if (pov_bary.x > 1.0) {
-            // Below, Right Side
+            // --------------------- Below, Right Side ---------------------
+            PlaneImageInfo image_info;
+            float distance;
 
-            return vec4(0.5, 1.0, 0.5, 1.0);
+            if (find_closest_top_left(plane, pov_bary, hit_bary, image_info, distance)) {
+                return single_image(image_info, hit_bary);
+            }
         } else {
-            // Below Center
+            // --------------------- Below Center ---------------------
+            PlaneImageInfo left_image_info;
+            PlaneImageInfo right_image_info;
+            float left_distance;
+            float right_distance;
 
-            return vec4(0.0, 1.0, 0.0, 1.0);
+            // get both image infos
+            bool left_found = find_closest_top_left(plane, pov_bary, hit_bary, left_image_info, left_distance);
+            bool right_found = find_closest_top_right(plane, pov_bary, hit_bary, right_image_info, right_distance);
+
+            if (left_found && right_found) {
+                return two_images(left_image_info, left_distance, right_image_info, right_distance, hit_bary);
+            } else if (left_found && !right_found) {
+                return single_image(left_image_info, hit_bary);
+            } else if (!left_found && right_found) {
+                return single_image(right_image_info, hit_bary);
+            }
         }
     }
     // we are in the center, vertically
     else {
         // check horizontal axis
         if (pov_bary.x < 0.0) {
-            // Left Side
+            // --------------------- Left Side ---------------------
+            PlaneImageInfo upper_image_info;
+            PlaneImageInfo lower_image_info;
+            float upper_distance;
+            float lower_distance;
 
-            return vec4(0.0, 0.5, 1.0, 1.0);
+            // get both image infos
+            bool upper_found = find_closest_top_right(plane, pov_bary, hit_bary, upper_image_info, upper_distance);
+            bool lower_found = find_closest_bottom_right(plane, pov_bary, hit_bary, lower_image_info, lower_distance);
+
+            if (upper_found && lower_found) {
+                return two_images(upper_image_info, upper_distance, lower_image_info, lower_distance, hit_bary);
+            } else if (upper_found && !lower_found) {
+                return single_image(upper_image_info, hit_bary);
+            } else if (!upper_found && lower_found) {
+                return single_image(lower_image_info, hit_bary);
+            }
         } else if (pov_bary.x > 1.0) {
-            // Right Side
+            // --------------------- Right Side ---------------------
+            PlaneImageInfo upper_image_info;
+            PlaneImageInfo lower_image_info;
+            float upper_distance;
+            float lower_distance;
 
-            return vec4(0.0, 0.5, 1.0, 1.0);
+            // get both image infos
+            bool upper_found = find_closest_top_left(plane, pov_bary, hit_bary, upper_image_info, upper_distance);
+            bool lower_found = find_closest_bottom_left(plane, pov_bary, hit_bary, lower_image_info, lower_distance);
+
+            if (upper_found && lower_found) {
+                return two_images(upper_image_info, upper_distance, lower_image_info, lower_distance, hit_bary);
+            } else if (upper_found && !lower_found) {
+                return single_image(upper_image_info, hit_bary);
+            } else if (!upper_found && lower_found) {
+                return single_image(lower_image_info, hit_bary);
+            }
         } else {
-            // We hit the plane
+            // --------------------- We hit the plane ---------------------
+            PlaneImageInfo upper_left_image_info;
+            PlaneImageInfo upper_right_image_info;
+            PlaneImageInfo lower_left_image_info;
+            PlaneImageInfo lower_right_image_info;
+
+            float upper_left_distance;
+            float upper_right_distance;
+            float lower_left_distance;
+            float lower_right_distance;
+
+            bool lower_left_found = find_closest_bottom_left(plane, pov_bary, hit_bary, lower_left_image_info, lower_left_distance);
+            bool lower_right_found = find_closest_bottom_left(plane, pov_bary, hit_bary, lower_right_image_info, lower_right_distance);
+            bool upper_left_found = find_closest_bottom_left(plane, pov_bary, hit_bary, upper_left_image_info, upper_left_distance);
+            bool upper_right_found = find_closest_bottom_left(plane, pov_bary, hit_bary, upper_right_image_info, upper_right_distance);
+
+            // center - all required
+            if (lower_left_found && lower_right_found && upper_right_found && upper_left_found) {
+                return four_images(
+                    lower_left_image_info, lower_left_distance,
+                    lower_right_image_info, lower_right_distance,
+                    upper_left_image_info, upper_left_distance,
+                    upper_right_image_info, upper_right_distance,
+                    hit_bary
+                );
+            }
+            // left top corner - only bottom right
+            else if (!upper_left_found && !upper_right_found && !lower_left_found && lower_right_found) {
+                return single_image(lower_right_image_info, hit_bary);
+            }
+            // left bottom corner - only top right
+            else if (!upper_left_found && !lower_left_found && !lower_right_found && upper_right_found) {
+                return single_image(upper_right_image_info, hit_bary);
+            }
+            // right top corner - only bottom left
+            else if (!upper_right_found && !upper_left_found && !lower_right_found && lower_left_found) {
+                return single_image(lower_left_image_info, hit_bary);
+            }
+            // right bottom corner - only top left
+            else if (!upper_right_found && !lower_left_found && !upper_right_found && upper_left_found) {
+                return single_image(upper_left_image_info, hit_bary);
+            }
+            // center above - bottom left and right
+            else if (!upper_left_found && !upper_right_found && lower_left_found && lower_right_found) {
+                return two_images(lower_left_image_info, lower_left_distance, lower_right_image_info, lower_right_distance, hit_bary);
+            }
+            // center below - top left and right
+            else if (!lower_left_found && !lower_right_found && upper_left_found && upper_right_found) {
+                return two_images(upper_left_image_info, upper_left_distance, upper_right_image_info, upper_right_distance, hit_bary);
+            }
+            // center left - right top and bottom
+            else if (!upper_left_found && !lower_left_found && upper_right_found && lower_right_found) {
+                return two_images(upper_right_image_info, upper_right_distance, lower_right_image_info, lower_right_distance, hit_bary);
+            }
+            // center right - left top and bottom
+            else if (!upper_right_found && !lower_right_found && upper_left_found && lower_left_found) {
+                return two_images(upper_left_image_info, upper_left_distance, lower_left_image_info, lower_left_distance, hit_bary);
+            }
         }
     }
 
