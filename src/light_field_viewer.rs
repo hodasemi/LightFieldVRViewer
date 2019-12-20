@@ -7,6 +7,7 @@ use std::sync::Arc;
 use cgmath::{vec3, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
 
 use super::{
+    debug::RayTraceDebugger,
     light_field::{light_field_data::PlaneImageRatios, LightField},
     view_emulator::ViewEmulator,
 };
@@ -520,6 +521,13 @@ impl LightFieldViewer {
             }
         }
 
+        // --- Start Debugging ---
+        let debug =
+            RayTraceDebugger::new(primary_data.clone(), secondary_data.clone(), images.clone());
+
+        debug.debug()?;
+        // ---  End Debugging  ---
+
         let command_buffer = context.render_core().allocate_primary_buffer()?;
 
         let primary_cpu_buffer = Buffer::builder()
@@ -585,23 +593,43 @@ impl LightFieldViewer {
 #[derive(Debug, Clone)]
 pub struct PlaneVertex {
     // (Position (vec3), First Index (f32))
-    position_first: Vector4<f32>,
+    pub position_first: Vector4<f32>,
 
     // (Normal (vec3), Last Index (f32))
-    normal_last: Vector4<f32>,
+    pub normal_last: Vector4<f32>,
 }
 
 #[derive(Debug, Clone)]
 pub struct PlaneImageInfo {
     // 4 * f32 = 16 Byte
-    ratios: PlaneImageRatios,
+    pub ratios: PlaneImageRatios,
 
     // 2 * f32 = 8 Byte
-    center: Vector2<f32>,
+    pub center: Vector2<f32>,
 
     // u32 = 4 Byte
-    image_index: u32,
+    pub image_index: u32,
 
     // 4 padding Byte are needed
-    padding: [u32; 1],
+    pub padding: [u32; 1],
+}
+
+impl PlaneImageInfo {
+    // used for cpu based debug ray tracer
+    pub fn check_inside(&self, bary: Vector2<f32>) -> bool {
+        (bary.x >= self.ratios.left)
+            && (bary.x <= self.ratios.right)
+            && (bary.y >= self.ratios.top)
+            && (bary.y <= self.ratios.bottom)
+    }
+
+    // used for cpu based debug ray tracer
+    pub fn normalized_uv(&self, bary: Vector2<f32>) -> Vector2<f32> {
+        let u = (bary.x - self.ratios.left) / (self.ratios.right - self.ratios.left);
+        let v = (bary.y - self.ratios.top) / (self.ratios.bottom - self.ratios.top);
+
+        use cgmath::vec2;
+
+        vec2(u, v)
+    }
 }

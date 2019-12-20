@@ -1,6 +1,7 @@
 use context::prelude::*;
 
 mod config;
+mod debug;
 mod light_field;
 mod light_field_viewer;
 mod view_emulator;
