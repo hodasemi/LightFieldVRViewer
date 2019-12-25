@@ -31,6 +31,13 @@
             "command": "cargo build",
             "args": [],
             "problemMatcher": []
+        },
+        {
+            "type": "shell",
+            "label": "Build shader",
+            "command": "cd shader/ && glslangValidator -V closesthit.rchit -o closesthit.rchit.spv && glslangValidator -V miss.rmiss -o miss.rmiss.spv && glslangValidator -V raygen.rgen -o raygen.rgen.spv",
+            "args": [],
+            "problemMatcher": []
         }
     ]
 }

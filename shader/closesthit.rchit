@@ -53,6 +53,7 @@ struct Plane {
 };
 
 layout(location = 0) rayPayloadInNV RayPayload pay_load;
+layout(location = 1) rayPayloadNV vec4 global_origin;
 hitAttributeNV vec2 attribs;
 
 // simple
@@ -97,12 +98,12 @@ Plane get_plane() {
 
 // Basic line - plane - intersection
 vec3 calculate_orthogonal_point(Plane plane) {
-    float numerator = dot((plane.top_left - gl_WorldRayOriginNV), plane.normal);
+    float numerator = dot((plane.top_left - global_origin.xyz), plane.normal);
     float denominator = dot(-plane.normal, plane.normal);
 
     float distance = numerator / denominator;
 
-    return gl_WorldRayOriginNV + (-plane.normal * distance);
+    return global_origin.xyz + (-plane.normal * distance);
 }
 
 // calculate barycentrics of point in reference to the plane
@@ -346,7 +347,12 @@ vec4 four_images(
         + fourth_color * fourth_weight;
 }
 
-vec4 interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
+void set_pay_load(vec4 color) {
+    pay_load.color = color;
+    pay_load.distance = gl_HitTNV;
+}
+
+void interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
     /*
                             |                   |
         Above, Left Side    |       Above       |   Above, Right Side
@@ -372,7 +378,8 @@ vec4 interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
             float distance;
 
             if (find_closest_bottom_right(plane, pov_bary, hit_bary, image_info, distance)) {
-                return single_image(image_info, hit_bary);
+                set_pay_load(single_image(image_info, hit_bary));
+                return;
             }
         } else if (pov_bary.x > 1.0) {
             // --------------------- Above, Right Side ---------------------
@@ -380,7 +387,8 @@ vec4 interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
             float distance;
 
             if (find_closest_bottom_left(plane, pov_bary, hit_bary, image_info, distance)) {
-                return single_image(image_info, hit_bary);
+                set_pay_load(single_image(image_info, hit_bary));
+                return;
             }
         } else {
             // --------------------- Above Center ---------------------
@@ -394,11 +402,14 @@ vec4 interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
             bool right_found = find_closest_bottom_right(plane, pov_bary, hit_bary, right_image_info, right_distance);
 
             if (left_found && right_found) {
-                return two_images(left_image_info, left_distance, right_image_info, right_distance, hit_bary);
+                set_pay_load(two_images(left_image_info, left_distance, right_image_info, right_distance, hit_bary));
+                return;
             } else if (left_found && !right_found) {
-                return single_image(left_image_info, hit_bary);
+                set_pay_load(single_image(left_image_info, hit_bary));
+                return;
             } else if (!left_found && right_found) {
-                return single_image(right_image_info, hit_bary);
+                set_pay_load(single_image(right_image_info, hit_bary));
+                return;
             }
         }
     }
@@ -411,7 +422,8 @@ vec4 interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
             float distance;
 
             if (find_closest_top_right(plane, pov_bary, hit_bary, image_info, distance)) {
-                return single_image(image_info, hit_bary);
+                set_pay_load(single_image(image_info, hit_bary));
+                return;
             }
         } else if (pov_bary.x > 1.0) {
             // --------------------- Below, Right Side ---------------------
@@ -419,7 +431,8 @@ vec4 interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
             float distance;
 
             if (find_closest_top_left(plane, pov_bary, hit_bary, image_info, distance)) {
-                return single_image(image_info, hit_bary);
+                set_pay_load(single_image(image_info, hit_bary));
+                return;
             }
         } else {
             // --------------------- Below Center ---------------------
@@ -433,11 +446,14 @@ vec4 interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
             bool right_found = find_closest_top_right(plane, pov_bary, hit_bary, right_image_info, right_distance);
 
             if (left_found && right_found) {
-                return two_images(left_image_info, left_distance, right_image_info, right_distance, hit_bary);
+                set_pay_load(two_images(left_image_info, left_distance, right_image_info, right_distance, hit_bary));
+                return;
             } else if (left_found && !right_found) {
-                return single_image(left_image_info, hit_bary);
+                set_pay_load(single_image(left_image_info, hit_bary));
+                return;
             } else if (!left_found && right_found) {
-                return single_image(right_image_info, hit_bary);
+                set_pay_load(single_image(right_image_info, hit_bary));
+                return;
             }
         }
     }
@@ -456,11 +472,14 @@ vec4 interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
             bool lower_found = find_closest_bottom_right(plane, pov_bary, hit_bary, lower_image_info, lower_distance);
 
             if (upper_found && lower_found) {
-                return two_images(upper_image_info, upper_distance, lower_image_info, lower_distance, hit_bary);
+                set_pay_load(two_images(upper_image_info, upper_distance, lower_image_info, lower_distance, hit_bary));
+                return;
             } else if (upper_found && !lower_found) {
-                return single_image(upper_image_info, hit_bary);
+                set_pay_load(single_image(upper_image_info, hit_bary));
+                return;
             } else if (!upper_found && lower_found) {
-                return single_image(lower_image_info, hit_bary);
+                set_pay_load(single_image(lower_image_info, hit_bary));
+                return;
             }
         } else if (pov_bary.x > 1.0) {
             // --------------------- Right Side ---------------------
@@ -474,11 +493,14 @@ vec4 interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
             bool lower_found = find_closest_bottom_left(plane, pov_bary, hit_bary, lower_image_info, lower_distance);
 
             if (upper_found && lower_found) {
-                return two_images(upper_image_info, upper_distance, lower_image_info, lower_distance, hit_bary);
+                set_pay_load(two_images(upper_image_info, upper_distance, lower_image_info, lower_distance, hit_bary));
+                return;
             } else if (upper_found && !lower_found) {
-                return single_image(upper_image_info, hit_bary);
+                set_pay_load(single_image(upper_image_info, hit_bary));
+                return;
             } else if (!upper_found && lower_found) {
-                return single_image(lower_image_info, hit_bary);
+                set_pay_load(single_image(lower_image_info, hit_bary));
+                return;
             }
         } else {
             // --------------------- We hit the plane ---------------------
@@ -499,51 +521,61 @@ vec4 interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
 
             // center - all required
             if (lower_left_found && lower_right_found && upper_right_found && upper_left_found) {
-                return four_images(
+                set_pay_load(four_images(
                     lower_left_image_info, lower_left_distance,
                     lower_right_image_info, lower_right_distance,
                     upper_left_image_info, upper_left_distance,
                     upper_right_image_info, upper_right_distance,
                     hit_bary
-                );
+                ));
+                return;
             }
             // left top corner - only bottom right
             else if (!upper_left_found && !upper_right_found && !lower_left_found && lower_right_found) {
-                return single_image(lower_right_image_info, hit_bary);
+                set_pay_load(single_image(lower_right_image_info, hit_bary));
+                return;
             }
             // left bottom corner - only top right
             else if (!upper_left_found && !lower_left_found && !lower_right_found && upper_right_found) {
-                return single_image(upper_right_image_info, hit_bary);
+                set_pay_load(single_image(upper_right_image_info, hit_bary));
+                return;
             }
             // right top corner - only bottom left
             else if (!upper_right_found && !upper_left_found && !lower_right_found && lower_left_found) {
-                return single_image(lower_left_image_info, hit_bary);
+                set_pay_load(single_image(lower_left_image_info, hit_bary));
+                return;
             }
             // right bottom corner - only top left
             else if (!upper_right_found && !lower_left_found && !upper_right_found && upper_left_found) {
-                return single_image(upper_left_image_info, hit_bary);
+                set_pay_load(single_image(upper_left_image_info, hit_bary));
+                return;
             }
             // center above - bottom left and right
             else if (!upper_left_found && !upper_right_found && lower_left_found && lower_right_found) {
-                return two_images(lower_left_image_info, lower_left_distance, lower_right_image_info, lower_right_distance, hit_bary);
+                set_pay_load(two_images(lower_left_image_info, lower_left_distance, lower_right_image_info, lower_right_distance, hit_bary));
+                return;
             }
             // center below - top left and right
             else if (!lower_left_found && !lower_right_found && upper_left_found && upper_right_found) {
-                return two_images(upper_left_image_info, upper_left_distance, upper_right_image_info, upper_right_distance, hit_bary);
+                set_pay_load(two_images(upper_left_image_info, upper_left_distance, upper_right_image_info, upper_right_distance, hit_bary));
+                return;
             }
             // center left - right top and bottom
             else if (!upper_left_found && !lower_left_found && upper_right_found && lower_right_found) {
-                return two_images(upper_right_image_info, upper_right_distance, lower_right_image_info, lower_right_distance, hit_bary);
+                set_pay_load(two_images(upper_right_image_info, upper_right_distance, lower_right_image_info, lower_right_distance, hit_bary));
+                return;
             }
             // center right - left top and bottom
             else if (!upper_right_found && !lower_right_found && upper_left_found && lower_left_found) {
-                return two_images(upper_left_image_info, upper_left_distance, lower_left_image_info, lower_left_distance, hit_bary);
+                set_pay_load(two_images(upper_left_image_info, upper_left_distance, lower_left_image_info, lower_left_distance, hit_bary));
+                return;
             }
         }
     }
 
-    // dummy
-    return vec4(1.0);
+    // set miss values by default
+    pay_load.color = vec4(0.1, 0.1, 0.1, 1.0);
+    pay_load.distance = -1.0;
 }
 
 void main() {
@@ -554,11 +586,9 @@ void main() {
     vec3 viewer_point = calculate_orthogonal_point(plane);
     vec3 point = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
 
-    pay_load.color = interpolate_images(
+    interpolate_images(
         plane,
         calculate_barycentrics(plane, point),
         calculate_barycentrics(plane, viewer_point)
     );
-
-    pay_load.distance = gl_HitTNV;
 }
