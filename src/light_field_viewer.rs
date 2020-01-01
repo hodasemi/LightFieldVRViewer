@@ -1,8 +1,10 @@
 use context::prelude::*;
 use context::ContextObject;
 
-use std::cell::Cell;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU32, Ordering::SeqCst},
+    Arc, Mutex,
+};
 
 use cgmath::{vec3, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
 
@@ -33,10 +35,10 @@ pub struct LightFieldViewer {
     _primary_buffer: Arc<Buffer<PlaneVertex>>,
     _secondary_buffer: Arc<Buffer<PlaneImageInfo>>,
 
-    view_emulator: ViewEmulator,
+    view_emulator: Mutex<ViewEmulator>,
 
-    last_time_stemp: Cell<f64>,
-    fps_count: Cell<u32>,
+    last_time_stemp: Mutex<f64>,
+    fps_count: AtomicU32,
 }
 
 impl LightFieldViewer {
@@ -119,10 +121,10 @@ impl LightFieldViewer {
             _primary_buffer: primary_buffer,
             _secondary_buffer: secondary_buffer,
 
-            view_emulator: ViewEmulator::new(context, Deg(45.0), 2.5),
+            view_emulator: Mutex::new(ViewEmulator::new(context, Deg(45.0), 2.5)),
 
-            last_time_stemp: Cell::new(context.time()),
-            fps_count: Cell::new(0),
+            last_time_stemp: Mutex::new(context.time()),
+            fps_count: AtomicU32::new(0),
         }))
     }
 }
@@ -133,7 +135,7 @@ impl ContextObject for LightFieldViewer {
     }
 
     fn update(&self) -> VerboseResult<()> {
-        self.view_emulator.update()?;
+        self.view_emulator.lock()?.update()?;
 
         Ok(())
     }
@@ -143,10 +145,10 @@ impl ContextObject for LightFieldViewer {
         if let TargetMode::Single(_) = self.view_buffers {
             match event {
                 PresentationEventType::KeyDown(key) => match key {
-                    Keycode::Escape => self.context.close(),
-                    _ => self.view_emulator.on_key_down(key),
+                    Keycode::Escape => self.context.close()?,
+                    _ => self.view_emulator.lock()?.on_key_down(key),
                 },
-                PresentationEventType::KeyUp(key) => self.view_emulator.on_key_up(key),
+                PresentationEventType::KeyUp(key) => self.view_emulator.lock()?.on_key_up(key),
                 _ => (),
             }
         }
@@ -158,13 +160,15 @@ impl ContextObject for LightFieldViewer {
 impl TScene for LightFieldViewer {
     fn update(&self) -> VerboseResult<()> {
         let current_time_stemp = self.context.time();
-        self.fps_count.set(self.fps_count.get() + 1);
+        self.fps_count.fetch_add(1, SeqCst);
 
-        if (current_time_stemp - self.last_time_stemp.get()) >= 1.0 {
-            self.last_time_stemp.set(self.last_time_stemp.get() + 1.0);
+        let last_time_stemp = *self.last_time_stemp.lock()?;
 
-            println!("fps: {}", self.fps_count.get());
-            self.fps_count.set(0);
+        if (current_time_stemp - last_time_stemp) >= 1.0 {
+            *self.last_time_stemp.lock()? = last_time_stemp + 1.0;
+
+            println!("fps: {}", self.fps_count.load(SeqCst));
+            self.fps_count.store(0, SeqCst);
         }
 
         Ok(())
@@ -181,7 +185,7 @@ impl TScene for LightFieldViewer {
             &self.view_buffers,
             &self.transform_descriptor,
             &self.output_image_descriptor,
-            &self.context.render_core().images(),
+            &self.context.render_core().images()?,
         ) {
             (
                 TargetMode::Single(index),
@@ -194,7 +198,7 @@ impl TScene for LightFieldViewer {
                     *index,
                     command_buffer,
                     view_buffer,
-                    &self.view_emulator.simulation_transform(),
+                    &self.view_emulator.lock()?.simulation_transform(),
                     example_descriptor,
                     target_images,
                     image_descriptor,
@@ -239,7 +243,7 @@ impl TScene for LightFieldViewer {
     }
 
     fn resize(&self) -> VerboseResult<()> {
-        self.view_emulator.on_resize();
+        self.view_emulator.lock()?.on_resize();
 
         Ok(())
     }
@@ -275,7 +279,7 @@ impl LightFieldViewer {
         image_descriptor.update(&[DescriptorWrite::storage_images(0, &[image])
             .change_image_layout(VK_IMAGE_LAYOUT_GENERAL)]);
 
-        command_buffer.set_full_image_layout(image, VK_IMAGE_LAYOUT_GENERAL);
+        command_buffer.set_full_image_layout(image, VK_IMAGE_LAYOUT_GENERAL)?;
 
         command_buffer.bind_pipeline(&self.ray_tracing_pipeline)?;
         command_buffer.bind_descriptor_sets_minimal(&[
@@ -285,7 +289,7 @@ impl LightFieldViewer {
         ])?;
         command_buffer.trace_rays_sbt(&self.sbt, image.width(), image.height(), 1);
 
-        command_buffer.set_full_image_layout(image, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+        command_buffer.set_full_image_layout(image, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)?;
 
         Ok(())
     }
@@ -295,7 +299,7 @@ impl LightFieldViewer {
     ) -> VerboseResult<TargetMode<Arc<Buffer<VRTransformations>>>> {
         let render_core = context.render_core();
 
-        match render_core.images() {
+        match render_core.images()? {
             TargetMode::Single(_) => Ok(TargetMode::Single(
                 Buffer::builder()
                     .set_usage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
@@ -332,7 +336,7 @@ impl LightFieldViewer {
             DescriptorPool::prepare_set(&pool).allocate()
         };
 
-        match render_core.images() {
+        match render_core.images()? {
             TargetMode::Single(_) => Ok(TargetMode::Single(create_desc()?)),
             TargetMode::Stereo(_, _) => Ok(TargetMode::Stereo(create_desc()?, create_desc()?)),
         }
