@@ -27,7 +27,7 @@ fn main() -> VerboseResult<()> {
             fullscreen: false,
             requested_display: None,
         })
-        // .enable_vsync()
+        .enable_vsync()
         .enable_keyboard()
         // .set_vr_mode(VRMode::OpenVR)
         // .set_openxr_json("/usr/share/openxr/1/openxr_monado.json")

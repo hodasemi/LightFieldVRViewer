@@ -5,6 +5,7 @@ use std::sync::{
     atomic::{AtomicU32, Ordering::SeqCst},
     Arc, Mutex,
 };
+use std::time::Duration;
 
 use cgmath::{vec3, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
 
@@ -37,7 +38,7 @@ pub struct LightFieldViewer {
 
     view_emulator: Mutex<ViewEmulator>,
 
-    last_time_stemp: Mutex<f64>,
+    last_time_stemp: Mutex<Duration>,
     fps_count: AtomicU32,
 }
 
@@ -164,8 +165,8 @@ impl TScene for LightFieldViewer {
 
         let last_time_stemp = *self.last_time_stemp.lock()?;
 
-        if (current_time_stemp - last_time_stemp) >= 1.0 {
-            *self.last_time_stemp.lock()? = last_time_stemp + 1.0;
+        if (current_time_stemp - last_time_stemp) >= Duration::from_secs_f32(1.0) {
+            *self.last_time_stemp.lock()? = last_time_stemp + Duration::from_secs_f32(1.0);
 
             println!("fps: {}", self.fps_count.load(SeqCst));
             self.fps_count.store(0, SeqCst);

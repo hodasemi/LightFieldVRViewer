@@ -3,6 +3,7 @@ use context::prelude::*;
 use cgmath::{vec3, Deg, Matrix3, Matrix4, Point3, Vector3};
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::light_field_viewer::{DEFAULT_FORWARD, UP};
 
@@ -23,7 +24,7 @@ pub struct ViewEmulator {
     turn_speed: Deg<f32>,
     movement_speed: f32,
 
-    last_time: f64,
+    last_time: Duration,
 
     // simulate vr transform for rendering without VR
     simulation_transform: VRTransformations,
@@ -80,9 +81,9 @@ impl ViewEmulator {
         if self.turn_dir != 0 || self.x_dir != 0 || self.z_dir != 0 || self.y_dir != 0 {
             // check for rotation
             if self.turn_dir < 0 {
-                self.direction = self.direction + self.turn_speed() * time_diff as f32;
+                self.direction = self.direction + self.turn_speed() * time_diff.as_secs_f32();
             } else if self.turn_dir > 0 {
-                self.direction = self.direction - self.turn_speed() * time_diff as f32;
+                self.direction = self.direction - self.turn_speed() * time_diff.as_secs_f32();
             }
 
             let dir = self.direction();
@@ -91,33 +92,33 @@ impl ViewEmulator {
             if self.x_dir < 0 {
                 let left_dir = vec3(dir.z, dir.y, -dir.x) * self.movement_speed();
 
-                self.position = self.position + left_dir * time_diff as f32;
+                self.position = self.position + left_dir * time_diff.as_secs_f32();
             } else if self.x_dir > 0 {
                 let right_dir = vec3(-dir.z, dir.y, dir.x) * self.movement_speed();
 
-                self.position = self.position + right_dir * time_diff as f32;
+                self.position = self.position + right_dir * time_diff.as_secs_f32();
             }
 
             // check for forward/backward movement
             if self.z_dir < 0 {
                 let new_dir = vec3(dir.x, dir.y, dir.z) * self.movement_speed();
 
-                self.position = self.position - new_dir * time_diff as f32;
+                self.position = self.position - new_dir * time_diff.as_secs_f32();
             } else if self.z_dir > 0 {
                 let new_dir = vec3(dir.x, dir.y, dir.z) * self.movement_speed();
 
-                self.position = self.position + new_dir * time_diff as f32;
+                self.position = self.position + new_dir * time_diff.as_secs_f32();
             }
 
             // check for up/down lift
             if self.y_dir < 0 {
                 let new_dir = UP * self.movement_speed();
 
-                self.position = self.position - new_dir * time_diff as f32;
+                self.position = self.position - new_dir * time_diff.as_secs_f32();
             } else if self.y_dir > 0 {
                 let new_dir = UP * self.movement_speed();
 
-                self.position = self.position + new_dir * time_diff as f32;
+                self.position = self.position + new_dir * time_diff.as_secs_f32();
             }
 
             let mut transform = self.simulation_transform;
