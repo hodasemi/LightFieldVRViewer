@@ -1,6 +1,6 @@
 use context::prelude::*;
 
-use super::{light_field_frustum::LightFieldFrustum, ranges::Ranges};
+use super::light_field_frustum::LightFieldFrustum;
 
 use cgmath::{vec2, InnerSpace, Vector2, Vector3};
 use image::{ImageBuffer, Rgba};
@@ -35,7 +35,7 @@ pub struct PlaneImageRatios {
 struct PlaneImage {
     image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     frustum: (usize, usize),
-    depth_values: Ranges,
+    depth_values: Vec<f32>,
 }
 
 struct DisparityPlane {
@@ -48,7 +48,7 @@ impl LightFieldData {
         context: &Arc<Context>,
         mut frustums: Vec<LightFieldFrustum>,
         mut image_data: Vec<(
-            Vec<(ImageBuffer<Rgba<u8>, Vec<u8>>, usize, Ranges)>,
+            Vec<(ImageBuffer<Rgba<u8>, Vec<u8>>, usize, Vec<f32>)>,
             usize,
             usize,
         )>,
@@ -106,13 +106,11 @@ impl LightFieldData {
             let mut total_count = 0;
 
             for image in disparity_plane.images.iter() {
-                if let Some(average) = image.depth_values.weighted_average(0.01) {
-                    total_depth += average;
-                    total_count += 1;
-                }
+                total_depth += image.depth_values[image.depth_values.len() / 2];
+                total_count += 1;
             }
 
-            let layer_depth = (total_depth / total_count as f64) as f32;
+            let layer_depth = total_depth / total_count as f32;
 
             println!("\nlayer index: {}", disparity_plane.disparity_index);
             println!("{:.2}", layer_depth);

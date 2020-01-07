@@ -35,9 +35,15 @@
         {
             "type": "shell",
             "label": "Build shader",
-            "command": "cd shader/ && glslangValidator -V closesthit.rchit -o closesthit.rchit.spv && glslangValidator -V miss.rmiss -o miss.rmiss.spv && glslangValidator -V raygen.rgen -o raygen.rgen.spv",
             "args": [],
-            "problemMatcher": []
+            "problemMatcher": [],
+            "linux": {
+                "command": "cd shader/ && glslangValidator -V closesthit.rchit -o closesthit.rchit.spv && glslangValidator -V miss.rmiss -o miss.rmiss.spv && glslangValidator -V raygen.rgen -o raygen.rgen.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader ; glslangValidator -V closesthit.rchit -o closesthit.rchit.spv ; glslangValidator -V miss.rmiss -o miss.rmiss.spv ; glslangValidator -V raygen.rgen -o raygen.rgen.spv",
+            }
         }
     ]
 }

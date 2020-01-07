@@ -629,12 +629,12 @@ impl PlaneImageInfo {
     }
 
     // used for cpu based debug ray tracer
-    pub fn normalized_uv(&self, bary: Vector2<f32>) -> Vector2<f32> {
-        let u = (bary.x - self.ratios.left) / (self.ratios.right - self.ratios.left);
-        let v = (bary.y - self.ratios.top) / (self.ratios.bottom - self.ratios.top);
+    // pub fn normalized_uv(&self, bary: Vector2<f32>) -> Vector2<f32> {
+    //     let u = (bary.x - self.ratios.left) / (self.ratios.right - self.ratios.left);
+    //     let v = (bary.y - self.ratios.top) / (self.ratios.bottom - self.ratios.top);
 
-        use cgmath::vec2;
+    //     use cgmath::vec2;
 
-        vec2(u, v)
-    }
+    //     vec2(u, v)
+    // }
 }

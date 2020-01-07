@@ -1,18 +1,18 @@
 use context::prelude::*;
 
-use super::ranges::Ranges;
-
+use std::collections::BinaryHeap;
 use std::fs::File;
 use std::io::BufReader;
 use std::slice::Iter;
 
+use ordered_float::OrderedFloat;
 use pxm::PFM;
 
 #[derive(Debug, Clone)]
 pub struct AlphaMap {
     data: Vec<Vec<bool>>,
 
-    depth: Option<Ranges>,
+    depth: Option<Vec<f32>>,
 }
 
 impl AlphaMap {
@@ -37,7 +37,7 @@ impl AlphaMap {
         }
     }
 
-    pub fn depth_values(&self) -> &Option<Ranges> {
+    pub fn depth_values(&self) -> &Option<Vec<f32>> {
         &self.depth
     }
 }
@@ -69,16 +69,22 @@ impl AlphaMaps {
         let depth_pfm = Self::open_pfm_file(&path)?;
 
         for alpha_map in self.maps.iter_mut() {
-            let mut depth_values = Ranges::new(0.1);
+            let mut depth_values = BinaryHeap::with_capacity(alpha_map.data.len());
 
             alpha_map.for_each_alpha(|x, y| {
                 let index = Self::to_index(&depth_pfm, x, y);
 
-                depth_values.insert(depth_pfm.data[index]);
+                depth_values.push(OrderedFloat(depth_pfm.data[index]));
             });
 
             if !depth_values.is_empty() {
-                alpha_map.depth = Some(depth_values);
+                let depth_vec = depth_values
+                    .into_sorted_vec()
+                    .iter()
+                    .map(|ordered_float| ordered_float.into_inner())
+                    .collect();
+
+                alpha_map.depth = Some(depth_vec);
             }
         }
 

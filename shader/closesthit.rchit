@@ -97,13 +97,13 @@ Plane get_plane() {
 }
 
 // Basic line - plane - intersection
-vec3 calculate_orthogonal_point(Plane plane) {
-    float numerator = dot((plane.top_left - global_origin.xyz), plane.normal);
+vec3 calculate_orthogonal_point(Plane plane, vec3 origin) {
+    float numerator = dot((plane.top_left - origin), plane.normal);
     float denominator = dot(-plane.normal, plane.normal);
 
     float distance = numerator / denominator;
 
-    return global_origin.xyz + (-plane.normal * distance);
+    return origin + (-plane.normal * distance);
 }
 
 // calculate barycentrics of point in reference to the plane
@@ -289,7 +289,8 @@ vec2 normalized_uv(PlaneImageInfo image_info, vec2 bary) {
     float u = (bary.x - image_info.left) / (image_info.right - image_info.left);
     float v = (bary.y - image_info.top) / (image_info.bottom - image_info.top);
 
-    return vec2(u, v);
+    // swap u and v
+    return vec2(v, u);
 }
 
 vec4 single_image(PlaneImageInfo image_info, vec2 hit_bary) {
@@ -304,8 +305,11 @@ vec4 two_images(PlaneImageInfo first_info, float first_distance, PlaneImageInfo 
 
     float total_distance = first_distance + second_distance;
 
-    float first_weight = (total_distance - first_distance) / total_distance;
-    float second_weight = (total_distance - second_distance) / total_distance;
+    // second_distance = (total_distance - first_distance)
+    float first_weight = second_distance / total_distance;
+
+    // first_distance = (total_distance - second_distance)
+    float second_weight = first_distance / total_distance;
 
     vec4 first_color = texture(images[nonuniformEXT(first_info.image_index)], first_uv);
     vec4 second_color = texture(images[nonuniformEXT(second_info.image_index)], second_uv);
@@ -314,7 +318,7 @@ vec4 two_images(PlaneImageInfo first_info, float first_distance, PlaneImageInfo 
 }
 
 float weight(float weight, float total, int amount) {
-    return 1.0 / ((weight / total) / (1.0 / float(amount)));
+    return weight / total;
 }
 
 vec4 four_images(
@@ -583,7 +587,7 @@ void main() {
 
     // TODO: check for backface
 
-    vec3 viewer_point = calculate_orthogonal_point(plane);
+    vec3 viewer_point = calculate_orthogonal_point(plane, global_origin.xyz);
     vec3 point = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
 
     interpolate_images(
