@@ -46,7 +46,12 @@ pub struct LightFieldViewer {
 }
 
 impl LightFieldViewer {
-    pub fn new(context: &Arc<Context>, light_fields: Vec<LightField>) -> VerboseResult<Arc<Self>> {
+    pub fn new(
+        context: &Arc<Context>,
+        light_fields: Vec<LightField>,
+        turn_speed: Deg<f32>,
+        movement_speed: f32,
+    ) -> VerboseResult<Arc<Self>> {
         let (
             blas,
             tlas,
@@ -135,7 +140,7 @@ impl LightFieldViewer {
             _secondary_buffer: secondary_buffer,
             selector_buffer,
 
-            view_emulator: Mutex::new(ViewEmulator::new(context, Deg(45.0), 2.5)),
+            view_emulator: Mutex::new(ViewEmulator::new(context, turn_speed, movement_speed)),
 
             last_time_stemp: Mutex::new(context.time()),
             fps_count: AtomicU32::new(0),
