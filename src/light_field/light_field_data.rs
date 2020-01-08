@@ -20,6 +20,7 @@ pub struct Plane {
     pub right_top: Vector3<f32>,
     pub right_bottom: Vector3<f32>,
 
+    // (image, corner points, center)
     pub content: Vec<(Arc<Image>, PlaneImageRatios, Vector2<f32>)>,
 }
 

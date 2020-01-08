@@ -10,7 +10,7 @@ use std::time::Duration;
 use cgmath::{vec3, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
 
 use super::{
-    debug::RayTraceDebugger,
+    interpolation::CPUInterpolation,
     light_field::{light_field_data::PlaneImageRatios, LightField},
     view_emulator::ViewEmulator,
 };
@@ -35,17 +35,28 @@ pub struct LightFieldViewer {
     _images: Vec<Arc<Image>>,
     _primary_buffer: Arc<Buffer<PlaneVertex>>,
     _secondary_buffer: Arc<Buffer<PlaneImageInfo>>,
+    selector_buffer: Arc<Buffer<InfoSelector>>,
 
     view_emulator: Mutex<ViewEmulator>,
 
     last_time_stemp: Mutex<Duration>,
     fps_count: AtomicU32,
+
+    interpolation: CPUInterpolation,
 }
 
 impl LightFieldViewer {
     pub fn new(context: &Arc<Context>, light_fields: Vec<LightField>) -> VerboseResult<Arc<Self>> {
-        let (blas, tlas, primary_buffer, secondary_buffer, images) =
-            Self::create_scene_data(context, light_fields)?;
+        let (
+            blas,
+            tlas,
+            primary_buffer,
+            secondary_buffer,
+            selector_buffer,
+            primary_data,
+            secondary_data,
+            images,
+        ) = Self::create_scene_data(context, light_fields)?;
 
         let view_buffers = Self::create_view_buffers(context)?;
 
@@ -63,6 +74,7 @@ impl LightFieldViewer {
             &tlas,
             &primary_buffer,
             &secondary_buffer,
+            &selector_buffer,
             &images,
         )?;
 
@@ -121,11 +133,14 @@ impl LightFieldViewer {
             _images: images,
             _primary_buffer: primary_buffer,
             _secondary_buffer: secondary_buffer,
+            selector_buffer,
 
             view_emulator: Mutex::new(ViewEmulator::new(context, Deg(45.0), 2.5)),
 
             last_time_stemp: Mutex::new(context.time()),
             fps_count: AtomicU32::new(0),
+
+            interpolation: CPUInterpolation::new(&primary_data, secondary_data),
         }))
     }
 }
@@ -261,19 +276,28 @@ impl LightFieldViewer {
         images: &Vec<Arc<Image>>,
         image_descriptor: &Arc<DescriptorSet>,
     ) -> VerboseResult<()> {
+        let inverted_transforms = VRTransformations {
+            proj: transform
+                .proj
+                .invert()
+                .expect("could not invert projection matrix"),
+            view: transform
+                .view
+                .invert()
+                .expect("could not invert view matrix"),
+        };
+
+        {
+            let mapped = self.selector_buffer.map_complete()?;
+
+            self.interpolation
+                .calculate_interpolation(inverted_transforms.view, mapped)?;
+        }
+
         // update
         {
             let mut mapped = view_buffer.map_complete()?;
-            mapped[0] = VRTransformations {
-                proj: transform
-                    .proj
-                    .invert()
-                    .expect("could not invert projection matrix"),
-                view: transform
-                    .view
-                    .invert()
-                    .expect("could not invert view matrix"),
-            };
+            mapped[0] = inverted_transforms;
         }
 
         let image = &images[index];
@@ -348,6 +372,7 @@ impl LightFieldViewer {
         tlas: &Arc<AccelerationStructure>,
         primary_buffer: &Arc<Buffer<PlaneVertex>>,
         secondary_buffer: &Arc<Buffer<PlaneImageInfo>>,
+        selector_buffer: &Arc<Buffer<InfoSelector>>,
         images: &Vec<Arc<Image>>,
     ) -> VerboseResult<Arc<DescriptorSet>> {
         let descriptor_set_layout = DescriptorSetLayout::builder()
@@ -371,6 +396,12 @@ impl LightFieldViewer {
             )
             .add_layout_binding(
                 3,
+                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
+                0,
+            )
+            .add_layout_binding(
+                4,
                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                 VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
                 VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT,
@@ -390,7 +421,8 @@ impl LightFieldViewer {
             DescriptorWrite::acceleration_structures(0, &[tlas]),
             DescriptorWrite::storage_buffers(1, &[primary_buffer]),
             DescriptorWrite::storage_buffers(2, &[secondary_buffer]),
-            DescriptorWrite::combined_samplers(3, &image_refs),
+            DescriptorWrite::storage_buffers(3, &[selector_buffer]),
+            DescriptorWrite::combined_samplers(4, &image_refs),
         ]);
 
         Ok(descriptor_set)
@@ -452,6 +484,9 @@ impl LightFieldViewer {
         Arc<AccelerationStructure>,
         Arc<Buffer<PlaneVertex>>,
         Arc<Buffer<PlaneImageInfo>>,
+        Arc<Buffer<InfoSelector>>,
+        Vec<PlaneVertex>,
+        Vec<PlaneImageInfo>,
         Vec<Arc<Image>>,
     )> {
         let mut primary_data = Vec::new();
@@ -526,15 +561,9 @@ impl LightFieldViewer {
             }
         }
 
-        // --- Start Debugging ---
-        let debug =
-            RayTraceDebugger::new(primary_data.clone(), secondary_data.clone(), images.clone());
-
-        debug.debug()?;
-        // ---  End Debugging  ---
-
         let command_buffer = context.render_core().allocate_primary_buffer()?;
 
+        // --- create primary buffer ---
         let primary_cpu_buffer = Buffer::builder()
             .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
             .set_usage(
@@ -548,6 +577,7 @@ impl LightFieldViewer {
         let primary_gpu_buffer =
             Buffer::into_device_local(primary_cpu_buffer, &command_buffer, context.queue())?;
 
+        // --- create secondary buffer ---
         let secondary_cpu_buffer = Buffer::builder()
             .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
             .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
@@ -557,6 +587,16 @@ impl LightFieldViewer {
         let secondary_gpu_buffer =
             Buffer::into_device_local(secondary_cpu_buffer, &command_buffer, context.queue())?;
 
+        // --- create selector buffer ---
+        let selector_buffer = Buffer::builder()
+            .set_memory_properties(
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            )
+            .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+            .set_size((primary_data.len() / 6) as u64)
+            .build(context.device().clone())?;
+
+        // --- create acceleration structures ---
         let blas = AccelerationStructure::bottom_level()
             .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
             .add_vertices(&primary_gpu_buffer, None)
@@ -590,7 +630,16 @@ impl LightFieldViewer {
             .device()
             .wait_for_fences(&[&fence], true, 1_000_000_000)?;
 
-        Ok((blas, tlas, primary_gpu_buffer, secondary_gpu_buffer, images))
+        Ok((
+            blas,
+            tlas,
+            primary_gpu_buffer,
+            secondary_gpu_buffer,
+            selector_buffer,
+            primary_data,
+            secondary_data,
+            images,
+        ))
     }
 }
 
@@ -615,26 +664,15 @@ pub struct PlaneImageInfo {
     // u32 = 4 Byte
     pub image_index: u32,
 
-    // 4 padding Byte are needed
+    // 4 padding Bytes are needed
     pub padding: [u32; 1],
 }
 
-impl PlaneImageInfo {
-    // used for cpu based debug ray tracer
-    pub fn check_inside(&self, bary: Vector2<f32>) -> bool {
-        (bary.x >= self.ratios.left)
-            && (bary.x <= self.ratios.right)
-            && (bary.y >= self.ratios.top)
-            && (bary.y <= self.ratios.bottom)
-    }
+#[derive(Debug, Clone)]
+pub struct InfoSelector {
+    // 4 * i32 = 16 Byte
+    pub indices: Vector4<i32>,
 
-    // used for cpu based debug ray tracer
-    // pub fn normalized_uv(&self, bary: Vector2<f32>) -> Vector2<f32> {
-    //     let u = (bary.x - self.ratios.left) / (self.ratios.right - self.ratios.left);
-    //     let v = (bary.y - self.ratios.top) / (self.ratios.bottom - self.ratios.top);
-
-    //     use cgmath::vec2;
-
-    //     vec2(u, v)
-    // }
+    // 4 * f32 = 16 Byte
+    pub weights: Vector4<f32>,
 }

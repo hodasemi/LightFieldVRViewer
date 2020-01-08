@@ -25,6 +25,11 @@ struct PlaneImageInfo {
     uint padding[1];
 };
 
+struct InfoSelector {
+    ivec4 indices;
+    vec4 weights;
+};
+
 layout(set = 0, binding = 1) readonly buffer Planes {
     PlaneVertex vertices[ ];
 } planes;
@@ -33,7 +38,11 @@ layout(set = 0, binding = 2) readonly buffer PlaneInfos {
     PlaneImageInfo image_infos[ ];
 } plane_infos;
 
-layout(set = 0, binding = 3) uniform sampler2D images[ ];
+layout(set = 0, binding = 3) readonly buffer InfoSelectors {
+    InfoSelector selectors[ ];
+} info_selectors;
+
+layout(set = 0, binding = 4) uniform sampler2D images[ ];
 
 struct RayPayload {
 	vec4 color;
@@ -94,6 +103,20 @@ Plane get_plane() {
     plane.last_index = uint(v0.last_index);
 
     return plane;
+}
+
+InfoSelector get_selector() {
+    int index = gl_PrimitiveID;
+
+    // there are 2 primitives per plane
+
+    if ((index % 2) != 0) {
+        index = index - 1;
+    }
+
+    index = index / 2;
+
+    return info_selectors.selectors[index];
 }
 
 // Basic line - plane - intersection
@@ -534,6 +557,8 @@ void interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
                 ));
                 return;
             }
+
+
             // left top corner - only bottom right
             else if (!upper_left_found && !upper_right_found && !lower_left_found && lower_right_found) {
                 set_pay_load(single_image(lower_right_image_info, hit_bary));
@@ -554,6 +579,8 @@ void interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
                 set_pay_load(single_image(upper_left_image_info, hit_bary));
                 return;
             }
+
+
             // center above - bottom left and right
             else if (!upper_left_found && !upper_right_found && lower_left_found && lower_right_found) {
                 set_pay_load(two_images(lower_left_image_info, lower_left_distance, lower_right_image_info, lower_right_distance, hit_bary));
@@ -582,17 +609,65 @@ void interpolate_images(Plane plane, vec2 hit_bary, vec2 pov_bary) {
     pay_load.distance = -1.0;
 }
 
+void interpolate_images(Plane plane, InfoSelector info_selector, vec2 hit_bary) {
+    // set distance as default to be missing
+    pay_load.distance = -1.0;
+
+    int number_of_images = 0;
+
+    for (; number_of_images < 4; number_of_images++) {
+        if (info_selector.indices[number_of_images] == -1) {
+            break;
+        }
+    }
+
+    if (number_of_images == 1) {
+        PlaneImageInfo info = plane_infos.image_infos[info_selector.indices[0]];
+
+        if (check_inside(info, hit_bary)) {
+            set_pay_load(single_image(info, hit_bary));
+        }
+    } else if (number_of_images == 2) {
+        vec4 color = vec4(0.0);
+
+        for (int i = 0; i < 2; i++) {
+            PlaneImageInfo info = plane_infos.image_infos[info_selector.indices[i]];
+
+            if (check_inside(info, hit_bary)) {
+                color += single_image(info, hit_bary) * info_selector.weights[i];
+            }
+        }
+
+        set_pay_load(color);
+    } else if (number_of_images == 4) {
+        vec4 color = vec4(0.0);
+
+        for (int i = 0; i < 4; i++) {
+            PlaneImageInfo info = plane_infos.image_infos[info_selector.indices[i]];
+
+            if (check_inside(info, hit_bary)) {
+                color += single_image(info, hit_bary) * info_selector.weights[i];
+            }
+        }
+
+        set_pay_load(color);
+    }
+}
+
 void main() {
     Plane plane = get_plane();
+    InfoSelector info_selector = get_selector();
 
     // TODO: check for backface
 
-    vec3 viewer_point = calculate_orthogonal_point(plane, global_origin.xyz);
+    // vec3 viewer_point = calculate_orthogonal_point(plane, global_origin.xyz);
     vec3 point = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
 
-    interpolate_images(
-        plane,
-        calculate_barycentrics(plane, point),
-        calculate_barycentrics(plane, viewer_point)
-    );
+    interpolate_images(plane, info_selector, calculate_barycentrics(plane, point));
+
+    // interpolate_images(
+    //     plane,
+    //     calculate_barycentrics(plane, point),
+    //     calculate_barycentrics(plane, viewer_point)
+    // );
 }
