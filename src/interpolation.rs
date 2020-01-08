@@ -102,7 +102,7 @@ impl CPUInterpolation {
                     // check horizontal axis
                     if viewer_barycentric.x < 0.0 {
                         // Above, Left Side
-                        println!("above, left side");
+                        // println!("above, left side");
 
                         let (index, _) = self
                             .find_closest_bottom_right(plane, viewer_barycentric)
@@ -114,7 +114,7 @@ impl CPUInterpolation {
                         };
                     } else if viewer_barycentric.x > 1.0 {
                         // Above, Right Side
-                        println!("above, right side");
+                        // println!("above, right side");
 
                         let (index, _) = self
                             .find_closest_bottom_left(plane, viewer_barycentric)
@@ -126,7 +126,7 @@ impl CPUInterpolation {
                         };
                     } else {
                         // Above Center
-                        println!("above, center");
+                        // println!("above, center");
 
                         selector[i] = Self::selector_of_two(
                             self.find_closest_bottom_left(plane, viewer_barycentric),
@@ -140,7 +140,7 @@ impl CPUInterpolation {
                     // check horizontal axis
                     if viewer_barycentric.x < 0.0 {
                         // Below, Left Side
-                        println!("below, center");
+                        // println!("below, center");
 
                         let (index, _) = self
                             .find_closest_top_right(plane, viewer_barycentric)
@@ -152,7 +152,7 @@ impl CPUInterpolation {
                         };
                     } else if viewer_barycentric.x > 1.0 {
                         // Below, Right Side
-                        println!("below, center");
+                        // println!("below, center");
 
                         let (index, _) = self
                             .find_closest_top_left(plane, viewer_barycentric)
@@ -164,7 +164,7 @@ impl CPUInterpolation {
                         };
                     } else {
                         // Below Center
-                        println!("below, center");
+                        // println!("below, center");
 
                         selector[i] = Self::selector_of_two(
                             self.find_closest_top_left(plane, viewer_barycentric),
@@ -178,7 +178,7 @@ impl CPUInterpolation {
                     // check horizontal axis
                     if viewer_barycentric.x < 0.0 {
                         // Left Side
-                        println!("left side");
+                        // println!("left side");
 
                         selector[i] = Self::selector_of_two(
                             self.find_closest_top_right(plane, viewer_barycentric),
@@ -187,7 +187,7 @@ impl CPUInterpolation {
                         )?;
                     } else if viewer_barycentric.x > 1.0 {
                         // Right Side
-                        println!("right side");
+                        // println!("right side");
 
                         selector[i] = Self::selector_of_two(
                             self.find_closest_top_left(plane, viewer_barycentric),
@@ -196,7 +196,7 @@ impl CPUInterpolation {
                         )?;
                     } else {
                         // We hit the plane
-                        println!("hit the plane");
+                        // println!("hit the plane");
 
                         selector[i] = Self::selector_of_four(
                             self.find_closest_top_left(plane, viewer_barycentric),
@@ -222,18 +222,18 @@ impl CPUInterpolation {
         let denominator = plane.normal.dot(direction);
 
         if denominator == 0.0 {
-            println!("plane and line are parallel");
-            if numerator == 0.0 {
-                println!("the plane contains the line");
-            } else {
-                println!("the plane and the line will never intersect");
-            }
+            // println!("plane and line are parallel");
+            // if numerator == 0.0 {
+            //     println!("the plane contains the line");
+            // } else {
+            //     println!("the plane and the line will never intersect");
+            // }
 
             return None;
         }
 
         if numerator == 0.0 {
-            println!("numerator is zero");
+            // println!("numerator is zero");
 
             return None;
         }
@@ -265,108 +265,66 @@ impl CPUInterpolation {
     }
 
     fn find_closest_bottom_right(&self, plane: &Plane, bary: Vector2<f32>) -> Option<(i32, f32)> {
-        let mut minimal_distance = f32::MAX;
-        let mut image_info_index = None;
-
-        for (index, info) in self.secondary_data[plane.first_index..plane.last_index]
-            .iter()
-            .enumerate()
-        {
-            let x_diff = info.center.x - bary.x;
-
+        self.find_closest(plane, bary, |x_diff, y_diff| {
             if x_diff < 0.0 {
-                continue;
+                return None;
             }
-
-            let y_diff = info.center.y - bary.y;
 
             if y_diff < 0.0 {
-                continue;
+                return None;
             }
 
-            let new_distance = x_diff + y_diff;
-
-            if new_distance < minimal_distance {
-                minimal_distance = new_distance;
-                image_info_index = Some(index);
-            }
-        }
-
-        match image_info_index {
-            Some(index) => Some((index as i32, minimal_distance)),
-            None => None,
-        }
+            Some(x_diff + y_diff)
+        })
     }
 
     fn find_closest_top_right(&self, plane: &Plane, bary: Vector2<f32>) -> Option<(i32, f32)> {
-        let mut minimal_distance = f32::MAX;
-        let mut image_info_index = None;
-
-        for (index, info) in self.secondary_data[plane.first_index..plane.last_index]
-            .iter()
-            .enumerate()
-        {
-            let x_diff = info.center.x - bary.x;
-
+        self.find_closest(plane, bary, |x_diff, y_diff| {
             if x_diff < 0.0 {
-                continue;
+                return None;
             }
-
-            let y_diff = info.center.y - bary.y;
 
             if y_diff > 0.0 {
-                continue;
+                return None;
             }
 
-            let new_distance = x_diff - y_diff;
-
-            if new_distance < minimal_distance {
-                minimal_distance = new_distance;
-                image_info_index = Some(index);
-            }
-        }
-
-        match image_info_index {
-            Some(index) => Some((index as i32, minimal_distance)),
-            None => None,
-        }
+            Some(x_diff - y_diff)
+        })
     }
 
     fn find_closest_bottom_left(&self, plane: &Plane, bary: Vector2<f32>) -> Option<(i32, f32)> {
-        let mut minimal_distance = f32::MAX;
-        let mut image_info_index = None;
-
-        for (index, info) in self.secondary_data[plane.first_index..plane.last_index]
-            .iter()
-            .enumerate()
-        {
-            let x_diff = info.center.x - bary.x;
-
+        self.find_closest(plane, bary, |x_diff, y_diff| {
             if x_diff > 0.0 {
-                continue;
+                return None;
             }
-
-            let y_diff = info.center.y - bary.y;
 
             if y_diff < 0.0 {
-                continue;
+                return None;
             }
 
-            let new_distance = y_diff - x_diff;
-
-            if new_distance < minimal_distance {
-                minimal_distance = new_distance;
-                image_info_index = Some(index);
-            }
-        }
-
-        match image_info_index {
-            Some(index) => Some((index as i32, minimal_distance)),
-            None => None,
-        }
+            Some(y_diff - x_diff)
+        })
     }
 
     fn find_closest_top_left(&self, plane: &Plane, bary: Vector2<f32>) -> Option<(i32, f32)> {
+        self.find_closest(plane, bary, |x_diff, y_diff| {
+            if x_diff > 0.0 {
+                return None;
+            }
+
+            if y_diff > 0.0 {
+                return None;
+            }
+
+            Some(-(x_diff + y_diff))
+        })
+    }
+
+    #[inline]
+    fn find_closest<F>(&self, plane: &Plane, bary: Vector2<f32>, f: F) -> Option<(i32, f32)>
+    where
+        F: Fn(f32, f32) -> Option<f32>,
+    {
         let mut minimal_distance = f32::MAX;
         let mut image_info_index = None;
 
@@ -375,22 +333,13 @@ impl CPUInterpolation {
             .enumerate()
         {
             let x_diff = info.center.x - bary.x;
-
-            if x_diff > 0.0 {
-                continue;
-            }
-
             let y_diff = info.center.y - bary.y;
 
-            if y_diff > 0.0 {
-                continue;
-            }
-
-            let new_distance = -(x_diff + y_diff);
-
-            if new_distance < minimal_distance {
-                minimal_distance = new_distance;
-                image_info_index = Some(index);
+            if let Some(new_distance) = f(x_diff, y_diff) {
+                if new_distance < minimal_distance {
+                    minimal_distance = new_distance;
+                    image_info_index = Some(plane.first_index + index);
+                }
             }
         }
 
