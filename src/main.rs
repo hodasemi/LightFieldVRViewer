@@ -26,6 +26,8 @@ fn main() -> VerboseResult<()> {
         }
     };
 
+    // let context = create_desktop_context(viewer_config.enable_vsync)?;
+
     // spawn threads to load light fields
     let mut join_handles: Vec<thread::JoinHandle<VerboseResult<LightField>>> = viewer_config
         .light_fields
@@ -81,7 +83,7 @@ fn create_vr_context() -> VerboseResult<Arc<Context>> {
 fn create_desktop_context(enable_vsync: bool) -> VerboseResult<Arc<Context>> {
     let mut context_builder = Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
-            debugging: false,
+            debugging: true,
             renderdoc: false,
             steam_layer: false,
             use_util: false,

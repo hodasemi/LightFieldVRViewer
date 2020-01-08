@@ -26,8 +26,10 @@ struct PlaneImageInfo {
 };
 
 struct InfoSelector {
-    ivec4 indices;
-    vec4 weights;
+    int indices[81];
+    float weights[81];
+
+    uint padding[2];
 };
 
 layout(set = 0, binding = 1) readonly buffer Planes {
@@ -105,7 +107,7 @@ Plane get_plane() {
     return plane;
 }
 
-InfoSelector get_selector() {
+int get_selector_index() {
     int index = gl_PrimitiveID;
 
     // there are 2 primitives per plane
@@ -114,9 +116,7 @@ InfoSelector get_selector() {
         index = index - 1;
     }
 
-    index = index / 2;
-
-    return info_selectors.selectors[index];
+    return index / 2;
 }
 
 // calculate barycentrics of point in reference to the plane
@@ -161,58 +161,35 @@ void set_pay_load(vec4 color) {
     pay_load.distance = gl_HitTNV;
 }
 
-void interpolate_images(Plane plane, InfoSelector info_selector, vec2 hit_bary) {
+void interpolate_images(int selector_index, vec2 hit_bary) {
     // set distance as default to be missing
     pay_load.distance = -1.0;
 
-    int number_of_images = 0;
+    int i = 0;
+    vec4 color = vec4(0.0);
 
-    for (; number_of_images < 4; number_of_images++) {
-        if (info_selector.indices[number_of_images] == -1) {
+    for (; i < MAX_IMAGES_PER_LAYER; i++) {
+        if (info_selectors.selectors[selector_index].data[i].index == -1) {
             break;
         }
+
+        PlaneImageInfo info = plane_infos.image_infos[info_selectors.selectors[selector_index].data[i].index];
+
+        color += single_image(info, hit_bary) * info_selectors.selectors[selector_index].data[i].weight;
     }
 
-    if (number_of_images == 1) {
-        PlaneImageInfo info = plane_infos.image_infos[info_selector.indices[0]];
-
-        if (check_inside(info, hit_bary)) {
-            set_pay_load(single_image(info, hit_bary));
-        }
-    } else if (number_of_images == 2) {
-        vec4 color = vec4(0.0);
-
-        for (int i = 0; i < 2; i++) {
-            PlaneImageInfo info = plane_infos.image_infos[info_selector.indices[i]];
-
-            if (check_inside(info, hit_bary)) {
-                color += single_image(info, hit_bary) * info_selector.weights[i];
-            }
-        }
-
-        set_pay_load(color);
-    } else if (number_of_images == 4) {
-        vec4 color = vec4(0.0);
-
-        for (int i = 0; i < 4; i++) {
-            PlaneImageInfo info = plane_infos.image_infos[info_selector.indices[i]];
-
-            if (check_inside(info, hit_bary)) {
-                color += single_image(info, hit_bary) * info_selector.weights[i];
-            }
-        }
-
+    if (i != 0) {
         set_pay_load(color);
     }
 }
 
 void main() {
     Plane plane = get_plane();
-    InfoSelector info_selector = get_selector();
+    int selector_index = get_selector_index();
 
     // TODO: check for backface
 
     vec3 point = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
 
-    interpolate_images(plane, info_selector, calculate_barycentrics(plane, point));
+    interpolate_images(selector_index, calculate_barycentrics(plane, point));
 }

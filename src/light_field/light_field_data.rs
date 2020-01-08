@@ -116,13 +116,6 @@ impl LightFieldData {
             println!("\nlayer index: {}", disparity_plane.disparity_index);
             println!("{:.2}", layer_depth);
 
-            // TODO:
-            // (1) [x] find corner frustums (assuming a rectangle)
-            // (2) [x] get image extent
-            // (3) [x] correctly place all images inside this plane
-            // (4) [ ] offline interpolation of images
-            // (5) [x] add result to vulkan buffer and descriptor
-
             // (1) find corner frustums
             let left_top_frustum = &sorted_frustums[&(0, 0)];
             let left_bottom_frustum = &sorted_frustums[&(0, frustum_extent.1 - 1)];

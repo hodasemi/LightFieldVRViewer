@@ -5,8 +5,23 @@
     "tasks": [
         {
             "type": "shell",
-            "label": "Run",
+            "label": "Run Release",
             "command": "cargo run --release",
+            "args": [],
+            "presentation": {
+                "clear": true
+            },
+            "linux": {
+                "problemMatcher": [
+                    "$rustc"
+                ]
+            },
+            "problemMatcher": []
+        },
+        {
+            "type": "shell",
+            "label": "Run Debug",
+            "command": "cargo run",
             "args": [],
             "presentation": {
                 "clear": true

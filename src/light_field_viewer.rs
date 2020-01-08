@@ -103,6 +103,7 @@ impl LightFieldViewer {
                     ShaderType::RayGeneration,
                 )?,
                 None,
+                None,
             )
             .add_shader(
                 ShaderModule::from_slice(
@@ -111,6 +112,7 @@ impl LightFieldViewer {
                     ShaderType::Miss,
                 )?,
                 None,
+                None,
             )
             .add_hit_shaders(
                 &[ShaderModule::from_slice(
@@ -118,7 +120,22 @@ impl LightFieldViewer {
                     include_bytes!("../shader/closesthit.rchit.spv"),
                     ShaderType::ClosestHit,
                 )?],
-                None,
+                None, None
+                // vec![Some(SpecializationConstants::new(
+                //     Box::new((max_images_per_plane, padding)),
+                //     &[
+                //         VkSpecializationMapEntry {
+                //             constantID: 0,
+                //             offset: 0,
+                //             size: std::mem::size_of::<u32>(),
+                //         },
+                //         VkSpecializationMapEntry {
+                //             constantID: 1,
+                //             offset: mem::size_of::<u32>() as u32,
+                //             size: std::mem::size_of::<u32>(),
+                //         },
+                //     ],
+                // ))],
             )
             .build(device, &[&as_descriptor, desc, &output_image_desc_layout])?;
 
@@ -293,10 +310,10 @@ impl LightFieldViewer {
         };
 
         {
-            let mapped = self.selector_buffer.map_complete()?;
+            let mut mapped = self.selector_buffer.map_complete()?;
 
             self.interpolation
-                .calculate_interpolation(inverted_transforms.view, mapped)?;
+                .calculate_interpolation(inverted_transforms.view, &mut mapped)?;
         }
 
         // update
@@ -484,6 +501,8 @@ impl LightFieldViewer {
     fn create_scene_data(
         context: &Arc<Context>,
         mut light_fields: Vec<LightField>,
+        images_per_plane: u32,
+        padding: u32,
     ) -> VerboseResult<(
         Arc<AccelerationStructure>,
         Arc<AccelerationStructure>,
@@ -593,12 +612,14 @@ impl LightFieldViewer {
             Buffer::into_device_local(secondary_cpu_buffer, &command_buffer, context.queue())?;
 
         // --- create selector buffer ---
+        let actual_plane_count = primary_data.len() / 6;
+
         let selector_buffer = Buffer::builder()
             .set_memory_properties(
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             )
             .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-            .set_size((primary_data.len() / 6) as u64)
+            .set_size((actual_plane_count as u32 * (images_per_plane + (padding / 2))) as u64)
             .build(context.device().clone())?;
 
         // --- create acceleration structures ---
@@ -673,11 +694,19 @@ pub struct PlaneImageInfo {
     pub padding: [u32; 1],
 }
 
-#[derive(Debug, Clone)]
-pub struct InfoSelector {
-    // 4 * i32 = 16 Byte
-    pub indices: Vector4<i32>,
+impl PlaneImageInfo {
+    pub fn check_inside(&self, bary: Vector2<f32>) -> bool {
+        (bary.x >= self.ratios.left)
+            && (bary.x <= self.ratios.right)
+            && (bary.y >= self.ratios.top)
+            && (bary.y <= self.ratios.bottom)
+    }
+}
 
-    // 4 * f32 = 16 Byte
-    pub weights: Vector4<f32>,
+#[derive(Clone)]
+pub struct InfoSelector {
+    pub indices: [i32; 81],
+    pub weight: [f32; 81],
+
+    padding: [u32; 2],
 }
