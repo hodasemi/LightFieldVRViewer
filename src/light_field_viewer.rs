@@ -18,12 +18,6 @@ use super::{
 pub const DEFAULT_FORWARD: Vector3<f32> = vec3(0.0, 0.0, -1.0);
 pub const UP: Vector3<f32> = vec3(0.0, 1.0, 0.0);
 
-pub const MAX_IMAGES_PER_LAYER: usize = 81;
-
-const fn padding() -> usize {
-    (MAX_IMAGES_PER_LAYER * 2) % 4
-}
-
 pub struct LightFieldViewer {
     context: Arc<Context>,
 
@@ -684,30 +678,17 @@ pub struct PlaneImageInfo {
     pub padding: [u32; 1],
 }
 
-impl PlaneImageInfo {
-    pub fn check_inside(&self, bary: Vector2<f32>) -> bool {
-        (bary.x >= self.ratios.left)
-            && (bary.x <= self.ratios.right)
-            && (bary.y >= self.ratios.top)
-            && (bary.y <= self.ratios.bottom)
-    }
-}
-
 #[derive(Clone)]
 pub struct InfoSelector {
-    pub indices: [i32; MAX_IMAGES_PER_LAYER],
-    pub weights: [f32; MAX_IMAGES_PER_LAYER],
-
-    padding: [u32; padding()],
+    pub indices: [i32; 4],
+    pub weights: [f32; 4],
 }
 
 impl Default for InfoSelector {
     fn default() -> Self {
         InfoSelector {
-            indices: [-1; MAX_IMAGES_PER_LAYER],
-            weights: [0.0; MAX_IMAGES_PER_LAYER],
-
-            padding: [0; padding()],
+            indices: [-1; 4],
+            weights: [0.0; 4],
         }
     }
 }

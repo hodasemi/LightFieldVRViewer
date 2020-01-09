@@ -4,7 +4,6 @@
 
 const float INFINITY = 1.0 / 0.0;
 
-const uint MAX_IMAGES_PER_LAYER = 81;
 
 struct PlaneVertex {
     vec3 position;
@@ -28,10 +27,8 @@ struct PlaneImageInfo {
 };
 
 struct InfoSelector {
-    int indices[MAX_IMAGES_PER_LAYER];
-    float weights[MAX_IMAGES_PER_LAYER];
-
-    uint padding[2];
+    int indices[4];
+    float weights[4];
 };
 
 layout(set = 0, binding = 1) readonly buffer Planes {
@@ -157,7 +154,7 @@ vec2 normalized_uv(PlaneImageInfo image_info, vec2 bary) {
 vec4 single_image(PlaneImageInfo image_info, vec2 hit_bary) {
     // vec2 uv = normalized_uv(image_info, hit_bary);
 
-    vec2 uv = vec2(1.0-hit_bary.y, 1.0-hit_bary.x);
+    vec2 uv = vec2(1.0 - hit_bary.y, 1.0 - hit_bary.x);
 
     return texture(images[nonuniformEXT(image_info.image_index)], uv);
 }
@@ -174,7 +171,7 @@ void interpolate_images(InfoSelector selector, vec2 hit_bary) {
     int i = 0;
     vec4 color = vec4(0.0);
 
-    for (; i < MAX_IMAGES_PER_LAYER; i++) {
+    for (; i < 4; i++) {
         if (selector.indices[i] == -1) {
             break;
         }
