@@ -154,7 +154,7 @@ vec2 normalized_uv(PlaneImageInfo image_info, vec2 bary) {
 vec4 single_image(PlaneImageInfo image_info, vec2 hit_bary) {
     // vec2 uv = normalized_uv(image_info, hit_bary);
 
-    vec2 uv = vec2(1.0 - hit_bary.y, 1.0 - hit_bary.x);
+    vec2 uv = hit_bary.yx;
 
     return texture(images[nonuniformEXT(image_info.image_index)], uv);
 }
