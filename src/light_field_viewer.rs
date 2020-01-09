@@ -18,6 +18,12 @@ use super::{
 pub const DEFAULT_FORWARD: Vector3<f32> = vec3(0.0, 0.0, -1.0);
 pub const UP: Vector3<f32> = vec3(0.0, 1.0, 0.0);
 
+pub const MAX_IMAGES_PER_LAYER: usize = 81;
+
+const fn padding() -> usize {
+    (MAX_IMAGES_PER_LAYER * 2) % 4
+}
+
 pub struct LightFieldViewer {
     context: Arc<Context>,
 
@@ -120,22 +126,8 @@ impl LightFieldViewer {
                     include_bytes!("../shader/closesthit.rchit.spv"),
                     ShaderType::ClosestHit,
                 )?],
-                None, None
-                // vec![Some(SpecializationConstants::new(
-                //     Box::new((max_images_per_plane, padding)),
-                //     &[
-                //         VkSpecializationMapEntry {
-                //             constantID: 0,
-                //             offset: 0,
-                //             size: std::mem::size_of::<u32>(),
-                //         },
-                //         VkSpecializationMapEntry {
-                //             constantID: 1,
-                //             offset: mem::size_of::<u32>() as u32,
-                //             size: std::mem::size_of::<u32>(),
-                //         },
-                //     ],
-                // ))],
+                None,
+                vec![None],
             )
             .build(device, &[&as_descriptor, desc, &output_image_desc_layout])?;
 
@@ -310,10 +302,10 @@ impl LightFieldViewer {
         };
 
         {
-            let mut mapped = self.selector_buffer.map_complete()?;
+            let mapped = self.selector_buffer.map_complete()?;
 
             self.interpolation
-                .calculate_interpolation(inverted_transforms.view, &mut mapped)?;
+                .calculate_interpolation(inverted_transforms.view, mapped)?;
         }
 
         // update
@@ -501,8 +493,6 @@ impl LightFieldViewer {
     fn create_scene_data(
         context: &Arc<Context>,
         mut light_fields: Vec<LightField>,
-        images_per_plane: u32,
-        padding: u32,
     ) -> VerboseResult<(
         Arc<AccelerationStructure>,
         Arc<AccelerationStructure>,
@@ -619,7 +609,7 @@ impl LightFieldViewer {
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             )
             .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-            .set_size((actual_plane_count as u32 * (images_per_plane + (padding / 2))) as u64)
+            .set_size(actual_plane_count as u64)
             .build(context.device().clone())?;
 
         // --- create acceleration structures ---
@@ -705,8 +695,19 @@ impl PlaneImageInfo {
 
 #[derive(Clone)]
 pub struct InfoSelector {
-    pub indices: [i32; 81],
-    pub weight: [f32; 81],
+    pub indices: [i32; MAX_IMAGES_PER_LAYER],
+    pub weights: [f32; MAX_IMAGES_PER_LAYER],
 
-    padding: [u32; 2],
+    padding: [u32; padding()],
+}
+
+impl Default for InfoSelector {
+    fn default() -> Self {
+        InfoSelector {
+            indices: [-1; MAX_IMAGES_PER_LAYER],
+            weights: [0.0; MAX_IMAGES_PER_LAYER],
+
+            padding: [0; padding()],
+        }
+    }
 }

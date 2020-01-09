@@ -16,7 +16,10 @@
                     "$rustc"
                 ]
             },
-            "problemMatcher": []
+            "problemMatcher": [],
+            "dependsOn": [
+                "Build shader"
+            ]
         },
         {
             "type": "shell",
@@ -31,7 +34,10 @@
                     "$rustc"
                 ]
             },
-            "problemMatcher": []
+            "problemMatcher": [],
+            "dependsOn": [
+                "Build shader"
+            ]
         },
         {
             "type": "shell",

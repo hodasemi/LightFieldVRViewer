@@ -1,7 +1,7 @@
 use cgmath::{vec2, vec4, InnerSpace, Matrix4, Vector2, Vector3};
 use context::prelude::*;
 
-use super::light_field_viewer::{InfoSelector, PlaneImageInfo, PlaneVertex};
+use super::light_field_viewer::{InfoSelector, PlaneImageInfo, PlaneVertex, MAX_IMAGES_PER_LAYER};
 
 use std::f32;
 use std::ops::IndexMut;
@@ -72,7 +72,7 @@ impl CPUInterpolation {
     pub fn calculate_interpolation(
         &self,
         inv_view: Matrix4<f32>,
-        selector: &mut impl IndexMut<usize, Output = InfoSelector>,
+        mut selector: impl IndexMut<usize, Output = InfoSelector>,
     ) -> VerboseResult<()> {
         let my_position = (inv_view * vec4(0.0, 0.0, 0.0, 1.0)).truncate();
 
@@ -102,18 +102,14 @@ impl CPUInterpolation {
                     // check horizontal axis
                     if viewer_barycentric.x < 0.0 {
                         // Above, Left Side
-                        self.set_image_infos(plane, vec2(0.0001, 0.0001), selector, i);
+                        selector[i] = self.set_image_infos(plane, vec2(0.0001, 0.0001));
                     } else if viewer_barycentric.x > 1.0 {
                         // Above, Right Side
-                        self.set_image_infos(plane, vec2(0.9999, 0.0001), selector, i);
+                        selector[i] = self.set_image_infos(plane, vec2(0.9999, 0.0001));
                     } else {
                         // Above Center
-                        self.set_image_infos(
-                            plane,
-                            vec2(viewer_barycentric.x, 0.0001),
-                            selector,
-                            i,
-                        );
+                        selector[i] =
+                            self.set_image_infos(plane, vec2(viewer_barycentric.x, 0.0001));
                     }
                 }
                 // check for below
@@ -121,18 +117,14 @@ impl CPUInterpolation {
                     // check horizontal axis
                     if viewer_barycentric.x < 0.0 {
                         // Below, Left Side
-                        self.set_image_infos(plane, vec2(0.0001, 0.9999), selector, i);
+                        selector[i] = self.set_image_infos(plane, vec2(0.0001, 0.9999));
                     } else if viewer_barycentric.x > 1.0 {
                         // Below, Right Side
-                        self.set_image_infos(plane, vec2(0.9999, 0.9999), selector, i);
+                        selector[i] = self.set_image_infos(plane, vec2(0.9999, 0.9999));
                     } else {
                         // Below Center
-                        self.set_image_infos(
-                            plane,
-                            vec2(viewer_barycentric.x, 0.9999),
-                            selector,
-                            i,
-                        );
+                        selector[i] =
+                            self.set_image_infos(plane, vec2(viewer_barycentric.x, 0.9999));
                     }
                 }
                 // we are in the center, vertically
@@ -140,23 +132,15 @@ impl CPUInterpolation {
                     // check horizontal axis
                     if viewer_barycentric.x < 0.0 {
                         // Left Side
-                        self.set_image_infos(
-                            plane,
-                            vec2(0.0001, viewer_barycentric.y),
-                            selector,
-                            i,
-                        );
+                        selector[i] =
+                            self.set_image_infos(plane, vec2(0.0001, viewer_barycentric.y));
                     } else if viewer_barycentric.x > 1.0 {
                         // Right Side
-                        self.set_image_infos(
-                            plane,
-                            vec2(0.9999, viewer_barycentric.y),
-                            selector,
-                            i,
-                        );
+                        selector[i] =
+                            self.set_image_infos(plane, vec2(0.9999, viewer_barycentric.y));
                     } else {
                         // We hit the plane
-                        self.set_image_infos(plane, viewer_barycentric, selector, i);
+                        selector[i] = self.set_image_infos(plane, viewer_barycentric);
                     }
                 }
             }
@@ -165,34 +149,18 @@ impl CPUInterpolation {
         Ok(())
     }
 
-    fn set_image_infos(
-        &self,
-        plane: &Plane,
-        bary: Vector2<f32>,
-        selector: &mut impl IndexMut<usize, Output = InfoSelector>,
-        i: usize,
-    ) {
-        let start_index = i * self.elements_per_plane as usize;
-        let end_index = start_index + self.elements_per_plane as usize;
-
-        let buffer_indices = start_index..end_index;
-
+    fn set_image_infos(&self, plane: &Plane, bary: Vector2<f32>) -> InfoSelector {
         let indices = self.find_overlapping_images(plane, bary);
         let weight = 1.0 / indices.len() as f32;
 
-        for (index, buffer_index) in buffer_indices.enumerate() {
-            if index >= indices.len() {
-                selector[buffer_index] = InfoSelector {
-                    index: -1,
-                    weight: 0.0,
-                };
-            } else {
-                selector[buffer_index] = InfoSelector {
-                    index: indices[index] as i32,
-                    weight,
-                };
-            }
+        let mut info_selector = InfoSelector::default();
+
+        for (i, index) in indices.iter().enumerate() {
+            info_selector.indices[i] = *index as i32;
+            info_selector.weights[i] = weight;
         }
+
+        info_selector
     }
 
     fn find_overlapping_images(&self, plane: &Plane, bary: Vector2<f32>) -> Vec<u32> {
@@ -207,7 +175,7 @@ impl CPUInterpolation {
             }
         }
 
-        if image_info_indices.len() > self.max_images_per_plane as usize {
+        if image_info_indices.len() > MAX_IMAGES_PER_LAYER {
             panic!("more images found than there are supported");
         }
 
