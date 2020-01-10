@@ -123,7 +123,7 @@ impl LightFieldData {
             let right_bottom_frustum =
                 &sorted_frustums[&(frustum_extent.0 - 1, frustum_extent.1 - 1)];
 
-            // (2) get image extent
+            // (2) get layer extent
             let left_top = left_top_frustum.get_corners_at_depth(layer_depth).0;
             let left_bottom = left_bottom_frustum.get_corners_at_depth(layer_depth).1;
             let right_top = right_top_frustum.get_corners_at_depth(layer_depth).2;
@@ -135,23 +135,19 @@ impl LightFieldData {
             // the length of every side in total = the length of the side of a camera + baseline * (cameras - 1)
 
             let total_width = (left_top - right_top).magnitude();
-            let total_height = (left_top - left_bottom).magnitude();
+
+            let (frustum_width, _) = Self::frustum_extents_at_depth(left_top_frustum, layer_depth);
+
+            let base_line_ratio = baseline / total_width;
+            let width_ratio = frustum_width / total_width;
 
             let mut image_locations = Vec::new();
 
             while let Some(image) = disparity_plane.images.pop() {
-                let (left_top, left_bottom, right_top, _) =
-                    sorted_frustums[&image.frustum].get_corners_at_depth(layer_depth);
-
-                let width = (left_top - right_top).magnitude();
-                let height = (left_top - left_bottom).magnitude();
-                let x = image.frustum.0 as f32 * baseline;
-                let y = image.frustum.1 as f32 * baseline;
-
-                let left_ratio = x / total_width;
-                let right_ratio = (x + width) / total_width;
-                let top_ratio = y / height;
-                let bottom_ratio = (y + height) / total_height;
+                let left_ratio = base_line_ratio * image.frustum.0 as f32;
+                let right_ratio = left_ratio + width_ratio;
+                let top_ratio = base_line_ratio * image.frustum.1 as f32;
+                let bottom_ratio = top_ratio + width_ratio;
 
                 let ratios = PlaneImageRatios {
                     left: left_ratio,
@@ -160,8 +156,8 @@ impl LightFieldData {
                     bottom: bottom_ratio,
                 };
 
-                let center_x = (x + width / 2.0) / total_width;
-                let center_y = (y + height / 2.0) / total_height;
+                let center_x = (left_ratio + right_ratio) / 2.0;
+                let center_y = (top_ratio + bottom_ratio) / 2.0;
 
                 let width = image.image.width();
                 let height = image.image.height();
@@ -189,5 +185,14 @@ impl LightFieldData {
 
     pub fn into_data(self) -> Vec<Plane> {
         self.data
+    }
+
+    fn frustum_extents_at_depth(frustum: &LightFieldFrustum, depth: f32) -> (f32, f32) {
+        let (left_top, left_bottom, right_top, _) = frustum.get_corners_at_depth(depth);
+
+        let width = (left_top - right_top).magnitude();
+        let height = (left_top - left_bottom).magnitude();
+
+        (width, height)
     }
 }

@@ -152,9 +152,9 @@ vec2 normalized_uv(PlaneImageInfo image_info, vec2 bary) {
 }
 
 vec4 single_image(PlaneImageInfo image_info, vec2 hit_bary) {
-    // vec2 uv = normalized_uv(image_info, hit_bary);
+    vec2 uv = normalized_uv(image_info, hit_bary);
 
-    vec2 uv = hit_bary.yx;
+    // vec2 uv = hit_bary.yx;
 
     return texture(images[nonuniformEXT(image_info.image_index)], uv);
 }
@@ -165,27 +165,27 @@ void set_pay_load(vec4 color) {
 }
 
 void interpolate_images(InfoSelector selector, vec2 hit_bary) {
-    // set distance as default to be missing
-    pay_load.distance = -1.0;
+    if (selector.indices[0] == -1) {
+        // set distance as default to be missing
+        pay_load.distance = -1.0;
+        return;
+    }
 
-    int i = 0;
     vec4 color = vec4(0.0);
 
-    for (; i < 4; i++) {
+    for (int i = 0; i < 4; i++) {
         if (selector.indices[i] == -1) {
             break;
         }
 
         PlaneImageInfo info = plane_infos.image_infos[selector.indices[i]];
 
-        // if (check_inside(info, hit_bary)) {
+        if (check_inside(info, hit_bary)) {
             color += single_image(info, hit_bary) * selector.weights[i];
-        // }
+        }
     }
 
-    if (i != 0) {
-        set_pay_load(color);
-    }
+    set_pay_load(color);
 }
 
 void main() {

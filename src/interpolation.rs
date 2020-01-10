@@ -98,92 +98,108 @@ impl CPUInterpolation {
                 X - is our reference point
                 */
 
-                if viewer_barycentric.y < 0.0 {
-                    // check horizontal axis
-                    if viewer_barycentric.x < 0.0 {
-                        // Above, Left Side
-                        selector[i] = Self::selector_of_one(
-                            self.find_closest_bottom_right(plane, vec2(0.0001, 0.0001)),
-                            "bottom right",
-                        )?;
-                    } else if viewer_barycentric.x > 1.0 {
-                        // Above, Right Side
-                        selector[i] = Self::selector_of_one(
-                            self.find_closest_bottom_left(plane, vec2(0.9999, 0.0001)),
-                            "bottom left",
-                        )?;
-                    } else {
-                        // Above Center
-                        selector[i] = Self::selector_of_two(
-                            self.find_closest_bottom_left(
-                                plane,
-                                vec2(viewer_barycentric.x, 0.0001),
-                            ),
-                            self.find_closest_bottom_right(
-                                plane,
-                                vec2(viewer_barycentric.x, 0.0001),
-                            ),
-                            "bottom left and bottom right",
-                        )?;
-                    }
+                if viewer_barycentric.x <= 1.0
+                    && viewer_barycentric.x >= 0.0
+                    && viewer_barycentric.y <= 1.0
+                    && viewer_barycentric.y >= 0.0
+                {
+                    // We hit the plane
+                    selector[i] = Self::selector_of_four(
+                        self.find_closest_top_left(plane, viewer_barycentric),
+                        self.find_closest_bottom_left(plane, viewer_barycentric),
+                        self.find_closest_top_right(plane, viewer_barycentric),
+                        self.find_closest_bottom_right(plane, viewer_barycentric),
+                    )?;
+                } else {
+                    selector[i] = InfoSelector::default();
                 }
-                // check for below
-                else if viewer_barycentric.y > 1.0 {
-                    // check horizontal axis
-                    if viewer_barycentric.x < 0.0 {
-                        // Below, Left Side
-                        selector[i] = Self::selector_of_one(
-                            self.find_closest_top_right(plane, vec2(0.0001, 0.9999)),
-                            "top right",
-                        )?;
-                    } else if viewer_barycentric.x > 1.0 {
-                        // Below, Right Side
-                        selector[i] = Self::selector_of_one(
-                            self.find_closest_top_left(plane, vec2(0.9999, 0.9999)),
-                            "top left",
-                        )?;
-                    } else {
-                        // Below Center
-                        selector[i] = Self::selector_of_two(
-                            self.find_closest_top_right(plane, vec2(viewer_barycentric.x, 0.9999)),
-                            self.find_closest_top_left(plane, vec2(viewer_barycentric.x, 0.9999)),
-                            "top right and top left",
-                        )?;
-                    }
-                }
-                // we are in the center, vertically
-                else {
-                    // check horizontal axis
-                    if viewer_barycentric.x < 0.0 {
-                        // Left Side
-                        selector[i] = Self::selector_of_two(
-                            self.find_closest_bottom_right(
-                                plane,
-                                vec2(0.0001, viewer_barycentric.y),
-                            ),
-                            self.find_closest_top_right(plane, vec2(0.0001, viewer_barycentric.y)),
-                            "bottom right and top right",
-                        )?;
-                    } else if viewer_barycentric.x > 1.0 {
-                        // Right Side
-                        selector[i] = Self::selector_of_two(
-                            self.find_closest_bottom_left(
-                                plane,
-                                vec2(0.9999, viewer_barycentric.y),
-                            ),
-                            self.find_closest_top_left(plane, vec2(0.9999, viewer_barycentric.y)),
-                            "bottom left and top left",
-                        )?;
-                    } else {
-                        // We hit the plane
-                        selector[i] = Self::selector_of_four(
-                            self.find_closest_top_left(plane, viewer_barycentric),
-                            self.find_closest_bottom_left(plane, viewer_barycentric),
-                            self.find_closest_top_right(plane, viewer_barycentric),
-                            self.find_closest_bottom_right(plane, viewer_barycentric),
-                        )?;
-                    }
-                }
+
+                //     if viewer_barycentric.y < 0.0 {
+                //         // check horizontal axis
+                //         if viewer_barycentric.x < 0.0 {
+                //             // Above, Left Side
+                //             selector[i] = Self::selector_of_one(
+                //                 self.find_closest_bottom_right(plane, vec2(0.0001, 0.0001)),
+                //                 "bottom right",
+                //             )?;
+                //         } else if viewer_barycentric.x > 1.0 {
+                //             // Above, Right Side
+                //             selector[i] = Self::selector_of_one(
+                //                 self.find_closest_bottom_left(plane, vec2(0.9999, 0.0001)),
+                //                 "bottom left",
+                //             )?;
+                //         } else {
+                //             // Above Center
+                //             selector[i] = Self::selector_of_two(
+                //                 self.find_closest_bottom_left(
+                //                     plane,
+                //                     vec2(viewer_barycentric.x, 0.0001),
+                //                 ),
+                //                 self.find_closest_bottom_right(
+                //                     plane,
+                //                     vec2(viewer_barycentric.x, 0.0001),
+                //                 ),
+                //                 "bottom left and bottom right",
+                //             )?;
+                //         }
+                //     }
+                //     // check for below
+                //     else if viewer_barycentric.y > 1.0 {
+                //         // check horizontal axis
+                //         if viewer_barycentric.x < 0.0 {
+                //             // Below, Left Side
+                //             selector[i] = Self::selector_of_one(
+                //                 self.find_closest_top_right(plane, vec2(0.0001, 0.9999)),
+                //                 "top right",
+                //             )?;
+                //         } else if viewer_barycentric.x > 1.0 {
+                //             // Below, Right Side
+                //             selector[i] = Self::selector_of_one(
+                //                 self.find_closest_top_left(plane, vec2(0.9999, 0.9999)),
+                //                 "top left",
+                //             )?;
+                //         } else {
+                //             // Below Center
+                //             selector[i] = Self::selector_of_two(
+                //                 self.find_closest_top_right(plane, vec2(viewer_barycentric.x, 0.9999)),
+                //                 self.find_closest_top_left(plane, vec2(viewer_barycentric.x, 0.9999)),
+                //                 "top right and top left",
+                //             )?;
+                //         }
+                //     }
+                //     // we are in the center, vertically
+                //     else {
+                //         // check horizontal axis
+                //         if viewer_barycentric.x < 0.0 {
+                //             // Left Side
+                //             selector[i] = Self::selector_of_two(
+                //                 self.find_closest_bottom_right(
+                //                     plane,
+                //                     vec2(0.0001, viewer_barycentric.y),
+                //                 ),
+                //                 self.find_closest_top_right(plane, vec2(0.0001, viewer_barycentric.y)),
+                //                 "bottom right and top right",
+                //             )?;
+                //         } else if viewer_barycentric.x > 1.0 {
+                //             // Right Side
+                //             selector[i] = Self::selector_of_two(
+                //                 self.find_closest_bottom_left(
+                //                     plane,
+                //                     vec2(0.9999, viewer_barycentric.y),
+                //                 ),
+                //                 self.find_closest_top_left(plane, vec2(0.9999, viewer_barycentric.y)),
+                //                 "bottom left and top left",
+                //             )?;
+                //         } else {
+                //             // We hit the plane
+                //             selector[i] = Self::selector_of_four(
+                //                 self.find_closest_top_left(plane, viewer_barycentric),
+                //                 self.find_closest_bottom_left(plane, viewer_barycentric),
+                //                 self.find_closest_top_right(plane, viewer_barycentric),
+                //                 self.find_closest_bottom_right(plane, viewer_barycentric),
+                //             )?;
+                //         }
+                //     }
             }
         }
 
