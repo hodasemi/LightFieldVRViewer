@@ -57,6 +57,8 @@ fn main() -> VerboseResult<()> {
         viewer_config.movement_speed,
     )?;
 
+    println!("created viewer!");
+
     // add viewer to context
     context.set_context_object(Some(light_field_viewer.clone()))?;
     context.render_core().add_scene(light_field_viewer)?;

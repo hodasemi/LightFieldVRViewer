@@ -10,8 +10,8 @@ use super::config::Config;
 use super::light_field_viewer::{DEFAULT_FORWARD, UP};
 
 use alpha_maps::AlphaMaps;
-use light_field_data::{LightFieldData, Plane};
-use light_field_frustum::LightFieldFrustum;
+use light_field_data::{LightFieldData, LightFieldFrustum, Plane};
+use light_field_frustum::CameraFrustum;
 
 use cgmath::{Array, InnerSpace, Vector3};
 
@@ -144,7 +144,7 @@ impl LightField {
 
         let right = direction.cross(up).normalize();
 
-        let frustums = LightFieldFrustum::create_frustums(center, direction, up, right, &config);
+        let frustums = CameraFrustum::create_frustums(center, direction, up, right, &config);
 
         let mut image_data = Vec::with_capacity(threads.len());
 
@@ -169,6 +169,10 @@ impl LightField {
             config,
             light_field_data,
         })
+    }
+
+    pub fn frustum(&self) -> LightFieldFrustum {
+        self.light_field_data.frustum.clone()
     }
 
     pub fn into_data(self) -> Vec<Plane> {

@@ -1,6 +1,6 @@
 use context::prelude::*;
 
-use super::light_field_frustum::LightFieldFrustum;
+use super::light_field_frustum::CameraFrustum;
 
 use cgmath::{vec2, InnerSpace, Vector2, Vector3};
 use image::{ImageBuffer, Rgba};
@@ -11,6 +11,77 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct LightFieldData {
     data: Vec<Plane>,
+
+    pub frustum: LightFieldFrustum,
+}
+
+#[derive(Debug, Clone)]
+pub struct LightFieldFrustum {
+    left: FrustumPlane,
+    right: FrustumPlane,
+    top: FrustumPlane,
+    bottom: FrustumPlane,
+    // back ?
+}
+
+impl LightFieldFrustum {
+    fn new(
+        left_top_frustum: &CameraFrustum,
+        right_top_frustum: &CameraFrustum,
+        left_bottom_frustum: &CameraFrustum,
+        right_bottom_frustum: &CameraFrustum,
+    ) -> Self {
+        let left_top = &left_top_frustum.left_top;
+        let right_top = &right_top_frustum.right_top;
+        let left_bottom = &left_bottom_frustum.left_bottom;
+        let right_bottom = &right_bottom_frustum.right_bottom;
+
+        LightFieldFrustum {
+            left: FrustumPlane::new(left_top.center, left_top.direction, left_bottom.direction),
+            right: FrustumPlane::new(
+                right_top.center,
+                right_top.direction,
+                right_bottom.direction,
+            ),
+            top: FrustumPlane::new(left_top.center, left_top.direction, right_top.direction),
+            bottom: FrustumPlane::new(
+                left_bottom.center,
+                left_bottom.direction,
+                right_bottom.direction,
+            ),
+        }
+    }
+
+    pub fn check(&self, point: Vector3<f32>) -> bool {
+        self.left.distance(point) >= 0.0
+            && self.right.distance(point) >= 0.0
+            && self.top.distance(point) >= 0.0
+            && self.bottom.distance(point) >= 0.0
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FrustumPlane {
+    normal: Vector3<f32>,
+    d: f32,
+}
+
+impl FrustumPlane {
+    fn new(
+        point_in_plane: Vector3<f32>,
+        first_direction: Vector3<f32>,
+        second_direction: Vector3<f32>,
+    ) -> Self {
+        let normal = first_direction.cross(second_direction).normalize();
+        let d = point_in_plane.dot(normal);
+
+        FrustumPlane { normal, d }
+    }
+
+    // https://en.wikipedia.org/wiki/Plane_%28geometry%29#Distance_from_a_point_to_a_plane
+    fn distance(&self, p: Vector3<f32>) -> f32 {
+        self.normal.x * p.x + self.normal.y * p.y + self.normal.z * p.z + self.d
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +118,7 @@ struct DisparityPlane {
 impl LightFieldData {
     pub fn new(
         context: &Arc<Context>,
-        mut frustums: Vec<LightFieldFrustum>,
+        mut frustums: Vec<CameraFrustum>,
         mut image_data: Vec<(
             Vec<(ImageBuffer<Rgba<u8>, Vec<u8>>, usize, Vec<f32>)>,
             usize,
@@ -101,6 +172,19 @@ impl LightFieldData {
 
         let mut planes = Vec::with_capacity(disparity_planes.len());
 
+        // (1) find corner frustums
+        let left_top_frustum = &sorted_frustums[&(0, 0)];
+        let left_bottom_frustum = &sorted_frustums[&(0, frustum_extent.1 - 1)];
+        let right_top_frustum = &sorted_frustums[&(frustum_extent.0 - 1, 0)];
+        let right_bottom_frustum = &sorted_frustums[&(frustum_extent.0 - 1, frustum_extent.1 - 1)];
+
+        let frustum = LightFieldFrustum::new(
+            left_top_frustum,
+            right_top_frustum,
+            left_bottom_frustum,
+            right_bottom_frustum,
+        );
+
         while let Some(mut disparity_plane) = disparity_planes.pop() {
             // calculate average depth of disparity layer
             let mut total_depth = 0.0;
@@ -115,13 +199,6 @@ impl LightFieldData {
 
             println!("\nlayer index: {}", disparity_plane.disparity_index);
             println!("{:.2}", layer_depth);
-
-            // (1) find corner frustums
-            let left_top_frustum = &sorted_frustums[&(0, 0)];
-            let left_bottom_frustum = &sorted_frustums[&(0, frustum_extent.1 - 1)];
-            let right_top_frustum = &sorted_frustums[&(frustum_extent.0 - 1, 0)];
-            let right_bottom_frustum =
-                &sorted_frustums[&(frustum_extent.0 - 1, frustum_extent.1 - 1)];
 
             // (2) get layer extent
             let left_top = left_top_frustum.get_corners_at_depth(layer_depth).0;
@@ -180,14 +257,18 @@ impl LightFieldData {
             })
         }
 
-        Ok(LightFieldData { data: planes })
+        Ok(LightFieldData {
+            data: planes,
+
+            frustum,
+        })
     }
 
     pub fn into_data(self) -> Vec<Plane> {
         self.data
     }
 
-    fn frustum_extents_at_depth(frustum: &LightFieldFrustum, depth: f32) -> (f32, f32) {
+    fn frustum_extents_at_depth(frustum: &CameraFrustum, depth: f32) -> (f32, f32) {
         let (left_top, left_bottom, right_top, _) = frustum.get_corners_at_depth(depth);
 
         let width = (left_top - right_top).magnitude();

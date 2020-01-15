@@ -7,7 +7,7 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use cgmath::{vec3, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
+use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
 
 use super::{
     interpolation::CPUInterpolation,
@@ -33,9 +33,8 @@ pub struct LightFieldViewer {
     _blas: Arc<AccelerationStructure>,
     _tlas: Arc<AccelerationStructure>,
     _images: Vec<Arc<Image>>,
-    _primary_buffer: Arc<Buffer<PlaneVertex>>,
-    _secondary_buffer: Arc<Buffer<PlaneImageInfo>>,
-    selector_buffer: Arc<Buffer<InfoSelector>>,
+    _vertex_buffer: Arc<Buffer<Vector3<f32>>>,
+    plane_buffer: Arc<Buffer<PlaneInfo>>,
 
     view_emulator: Mutex<ViewEmulator>,
 
@@ -52,16 +51,8 @@ impl LightFieldViewer {
         turn_speed: Deg<f32>,
         movement_speed: f32,
     ) -> VerboseResult<Arc<Self>> {
-        let (
-            blas,
-            tlas,
-            primary_buffer,
-            secondary_buffer,
-            selector_buffer,
-            primary_data,
-            secondary_data,
-            images,
-        ) = Self::create_scene_data(context, light_fields)?;
+        let (blas, tlas, vertex_buffer, plane_buffer, images, interpolation) =
+            Self::create_scene_data(context, light_fields)?;
 
         let view_buffers = Self::create_view_buffers(context)?;
 
@@ -74,14 +65,8 @@ impl LightFieldViewer {
 
         let device = context.device();
 
-        let as_descriptor = Self::create_as_descriptor(
-            context.device(),
-            &tlas,
-            &primary_buffer,
-            &secondary_buffer,
-            &selector_buffer,
-            &images,
-        )?;
+        let as_descriptor =
+            Self::create_as_descriptor(context.device(), &tlas, &plane_buffer, &images)?;
 
         let output_image_desc_layout = DescriptorSetLayout::builder()
             .add_layout_binding(
@@ -139,16 +124,15 @@ impl LightFieldViewer {
             _blas: blas,
             _tlas: tlas,
             _images: images,
-            _primary_buffer: primary_buffer,
-            _secondary_buffer: secondary_buffer,
-            selector_buffer,
+            _vertex_buffer: vertex_buffer,
+            plane_buffer,
 
             view_emulator: Mutex::new(ViewEmulator::new(context, turn_speed, movement_speed)),
 
             last_time_stemp: Mutex::new(context.time()),
             fps_count: AtomicU32::new(0),
 
-            interpolation: CPUInterpolation::new(&primary_data, secondary_data),
+            interpolation,
         }))
     }
 }
@@ -296,7 +280,7 @@ impl LightFieldViewer {
         };
 
         {
-            let mapped = self.selector_buffer.map_complete()?;
+            let mapped = self.plane_buffer.map_complete()?;
 
             self.interpolation
                 .calculate_interpolation(inverted_transforms.view, mapped)?;
@@ -378,9 +362,7 @@ impl LightFieldViewer {
     fn create_as_descriptor(
         device: &Arc<Device>,
         tlas: &Arc<AccelerationStructure>,
-        primary_buffer: &Arc<Buffer<PlaneVertex>>,
-        secondary_buffer: &Arc<Buffer<PlaneImageInfo>>,
-        selector_buffer: &Arc<Buffer<InfoSelector>>,
+        plane_buffer: &Arc<Buffer<PlaneInfo>>,
         images: &Vec<Arc<Image>>,
     ) -> VerboseResult<Arc<DescriptorSet>> {
         let descriptor_set_layout = DescriptorSetLayout::builder()
@@ -398,18 +380,6 @@ impl LightFieldViewer {
             )
             .add_layout_binding(
                 2,
-                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
-                0,
-            )
-            .add_layout_binding(
-                3,
-                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
-                0,
-            )
-            .add_layout_binding(
-                4,
                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                 VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
                 VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT,
@@ -427,10 +397,8 @@ impl LightFieldViewer {
 
         descriptor_set.update(&[
             DescriptorWrite::acceleration_structures(0, &[tlas]),
-            DescriptorWrite::storage_buffers(1, &[primary_buffer]),
-            DescriptorWrite::storage_buffers(2, &[secondary_buffer]),
-            DescriptorWrite::storage_buffers(3, &[selector_buffer]),
-            DescriptorWrite::combined_samplers(4, &image_refs),
+            DescriptorWrite::storage_buffers(1, &[plane_buffer]),
+            DescriptorWrite::combined_samplers(2, &image_refs),
         ]);
 
         Ok(descriptor_set)
@@ -490,23 +458,22 @@ impl LightFieldViewer {
     ) -> VerboseResult<(
         Arc<AccelerationStructure>,
         Arc<AccelerationStructure>,
-        Arc<Buffer<PlaneVertex>>,
-        Arc<Buffer<PlaneImageInfo>>,
-        Arc<Buffer<InfoSelector>>,
-        Vec<PlaneVertex>,
-        Vec<PlaneImageInfo>,
+        Arc<Buffer<Vector3<f32>>>,
+        Arc<Buffer<PlaneInfo>>,
         Vec<Arc<Image>>,
+        CPUInterpolation,
     )> {
-        let mut primary_data = Vec::new();
-        let mut secondary_data = Vec::new();
+        let mut vertex_data = Vec::new();
+        let mut plane_infos = Vec::new();
+        let mut interpolation_infos = Vec::new();
         let mut images = Vec::new();
 
         while let Some(light_field) = light_fields.pop() {
+            let frustum = light_field.frustum();
             let mut planes = light_field.into_data();
 
             while let Some(mut plane) = planes.pop() {
-                // get first index
-                let first_index = secondary_data.len();
+                let mut image_infos = Vec::with_capacity(plane.content.len());
 
                 // add plane contents to buffers
                 while let Some((image, ratios, center)) = plane.content.pop() {
@@ -514,102 +481,76 @@ impl LightFieldViewer {
                     let image_index = images.len() as u32;
                     images.push(image);
 
-                    secondary_data.push(PlaneImageInfo {
+                    image_infos.push(PlaneImageInfo {
                         ratios,
                         center,
                         image_index,
-
-                        padding: [0],
                     });
                 }
-
-                // get last index
-                let last_index = secondary_data.len();
 
                 let plane_normal = (plane.left_top - plane.left_bottom)
                     .cross(plane.left_bottom - plane.right_bottom)
                     .normalize();
 
+                let plane_info = PlaneInfo {
+                    top_left: plane.left_top.extend(0.0),
+                    top_right: plane.right_top.extend(0.0),
+                    bottom_left: plane.left_bottom.extend(0.0),
+                    bottom_right: plane.right_bottom.extend(0.0),
+
+                    normal: plane_normal.extend(0.0),
+
+                    indices: vec4(-1, -1, -1, -1),
+                    weights: vec4(0.0, 0.0, 0.0, 0.0),
+                };
+
+                plane_infos.push(plane_info.clone());
+                interpolation_infos.push((plane_info, frustum.clone(), image_infos));
+
                 // create vertex data
                 // v0
-                primary_data.push(PlaneVertex {
-                    position_first: plane.left_bottom.extend(first_index as f32),
-                    normal_last: plane_normal.extend(last_index as f32),
-                });
+                vertex_data.push(plane.left_bottom);
 
                 // v1
-                primary_data.push(PlaneVertex {
-                    position_first: plane.left_top.extend(first_index as f32),
-                    normal_last: plane_normal.extend(last_index as f32),
-                });
+                vertex_data.push(plane.left_top);
 
                 // v2
-                primary_data.push(PlaneVertex {
-                    position_first: plane.right_bottom.extend(first_index as f32),
-                    normal_last: plane_normal.extend(last_index as f32),
-                });
+                vertex_data.push(plane.right_bottom);
 
                 // v3
-                primary_data.push(PlaneVertex {
-                    position_first: plane.right_bottom.extend(first_index as f32),
-                    normal_last: plane_normal.extend(last_index as f32),
-                });
+                vertex_data.push(plane.right_bottom);
 
                 // v4
-                primary_data.push(PlaneVertex {
-                    position_first: plane.left_top.extend(first_index as f32),
-                    normal_last: plane_normal.extend(last_index as f32),
-                });
+                vertex_data.push(plane.left_top);
 
                 // v5
-                primary_data.push(PlaneVertex {
-                    position_first: plane.right_top.extend(first_index as f32),
-                    normal_last: plane_normal.extend(last_index as f32),
-                });
+                vertex_data.push(plane.right_top);
             }
         }
 
         let command_buffer = context.render_core().allocate_primary_buffer()?;
 
-        // --- create primary buffer ---
-        let primary_cpu_buffer = Buffer::builder()
+        // --- create vertex buffer ---
+        let vertex_cpu_buffer = Buffer::builder()
             .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-            .set_usage(
-                VK_BUFFER_USAGE_RAY_TRACING_BIT_NV
-                    | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-                    | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            )
-            .set_data(&primary_data)
+            .set_usage(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
+            .set_data(&vertex_data)
             .build(context.device().clone())?;
 
-        let primary_gpu_buffer =
-            Buffer::into_device_local(primary_cpu_buffer, &command_buffer, context.queue())?;
+        let vertex_gpu_buffer =
+            Buffer::into_device_local(vertex_cpu_buffer, &command_buffer, context.queue())?;
 
-        // --- create secondary buffer ---
-        let secondary_cpu_buffer = Buffer::builder()
+        // --- create plane info buffer ---
+        let plane_buffer = Buffer::builder()
             .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-            .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
-            .set_data(&secondary_data)
-            .build(context.device().clone())?;
-
-        let secondary_gpu_buffer =
-            Buffer::into_device_local(secondary_cpu_buffer, &command_buffer, context.queue())?;
-
-        // --- create selector buffer ---
-        let actual_plane_count = primary_data.len() / 6;
-
-        let selector_buffer = Buffer::builder()
-            .set_memory_properties(
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            )
             .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-            .set_size(actual_plane_count as u64)
+            .set_data(&plane_infos)
             .build(context.device().clone())?;
 
         // --- create acceleration structures ---
         let blas = AccelerationStructure::bottom_level()
             .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
-            .add_vertices(&primary_gpu_buffer, None)
+            .add_vertices(&vertex_gpu_buffer, None)
             .build(context.device().clone())?;
 
         let tlas = AccelerationStructure::top_level()
@@ -643,52 +584,55 @@ impl LightFieldViewer {
         Ok((
             blas,
             tlas,
-            primary_gpu_buffer,
-            secondary_gpu_buffer,
-            selector_buffer,
-            primary_data,
-            secondary_data,
+            vertex_gpu_buffer,
+            plane_buffer,
             images,
+            CPUInterpolation::new(interpolation_infos),
         ))
     }
 }
 
-// Indices are [First Index; Last Index[
 #[derive(Debug, Clone)]
-pub struct PlaneVertex {
-    // (Position (vec3), First Index (f32))
-    pub position_first: Vector4<f32>,
+pub struct PlaneInfo {
+    pub top_left: Vector4<f32>,
+    pub top_right: Vector4<f32>,
+    pub bottom_left: Vector4<f32>,
+    pub bottom_right: Vector4<f32>,
 
-    // (Normal (vec3), Last Index (f32))
-    pub normal_last: Vector4<f32>,
+    pub normal: Vector4<f32>,
+
+    pub indices: Vector4<i32>,
+    pub weights: Vector4<f32>,
 }
+
+// // Indices are [First Index; Last Index[
+// #[derive(Debug, Clone)]
+// pub struct PlaneVertex {
+//     // (Position (vec3), First Index (f32))
+//     pub position_first: Vector4<f32>,
+
+//     // (Normal (vec3), Last Index (f32))
+//     pub normal_last: Vector4<f32>,
+// }
 
 #[derive(Debug, Clone)]
 pub struct PlaneImageInfo {
-    // 4 * f32 = 16 Byte
     pub ratios: PlaneImageRatios,
-
-    // 2 * f32 = 8 Byte
     pub center: Vector2<f32>,
-
-    // u32 = 4 Byte
     pub image_index: u32,
-
-    // 4 padding Bytes are needed
-    pub padding: [u32; 1],
 }
 
-#[derive(Clone)]
-pub struct InfoSelector {
-    pub indices: [i32; 4],
-    pub weights: [f32; 4],
-}
+// #[derive(Clone)]
+// pub struct InfoSelector {
+//     pub indices: [i32; 4],
+//     pub weights: [f32; 4],
+// }
 
-impl Default for InfoSelector {
-    fn default() -> Self {
-        InfoSelector {
-            indices: [-1; 4],
-            weights: [0.0; 4],
-        }
-    }
-}
+// impl Default for InfoSelector {
+//     fn default() -> Self {
+//         InfoSelector {
+//             indices: [-1; 4],
+//             weights: [0.0; 4],
+//         }
+//     }
+// }

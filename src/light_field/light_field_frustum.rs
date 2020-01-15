@@ -22,7 +22,7 @@ impl Line {
 }
 
 #[derive(Debug, Clone)]
-pub struct LightFieldFrustum {
+pub struct CameraFrustum {
     position: (usize, usize),
 
     pub left_top: Line,
@@ -33,10 +33,10 @@ pub struct LightFieldFrustum {
     main_direction: Vector3<f32>,
 }
 
-unsafe impl Sync for LightFieldFrustum {}
-unsafe impl Send for LightFieldFrustum {}
+unsafe impl Sync for CameraFrustum {}
+unsafe impl Send for CameraFrustum {}
 
-impl LightFieldFrustum {
+impl CameraFrustum {
     /// `direction`, `up`, `right` need to be normalized
     pub fn create_frustums(
         center: Vector3<f32>,
@@ -44,7 +44,7 @@ impl LightFieldFrustum {
         up: Vector3<f32>,
         right: Vector3<f32>,
         config: &Config,
-    ) -> Vec<LightFieldFrustum> {
+    ) -> Vec<CameraFrustum> {
         let mut frustums = Vec::new();
         let baseline = config.extrinsics.baseline();
 
@@ -93,7 +93,7 @@ impl LightFieldFrustum {
         let right_top = Line::create(camera_center, sensor_left_bottom);
         let right_bottom = Line::create(camera_center, sensor_left_top);
 
-        LightFieldFrustum {
+        CameraFrustum {
             position: (x, y),
 
             left_top,
