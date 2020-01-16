@@ -40,10 +40,10 @@ impl LightFieldFrustum {
             left: FrustumPlane::new(left_top.center, left_top.direction, left_bottom.direction),
             right: FrustumPlane::new(
                 right_top.center,
-                right_top.direction,
                 right_bottom.direction,
+                right_top.direction,
             ),
-            top: FrustumPlane::new(left_top.center, left_top.direction, right_top.direction),
+            top: FrustumPlane::new(left_top.center, right_top.direction, left_top.direction),
             bottom: FrustumPlane::new(
                 left_bottom.center,
                 left_bottom.direction,

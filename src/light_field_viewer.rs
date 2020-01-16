@@ -24,7 +24,7 @@ pub struct LightFieldViewer {
     view_buffers: TargetMode<Arc<Buffer<VRTransformations>>>,
     transform_descriptor: TargetMode<Arc<DescriptorSet>>,
     output_image_descriptor: TargetMode<Arc<DescriptorSet>>,
-    as_descriptor: Arc<DescriptorSet>,
+    as_descriptor: TargetMode<Arc<DescriptorSet>>,
 
     ray_tracing_pipeline: Arc<Pipeline>,
     sbt: ShaderBindingTable,
@@ -34,7 +34,7 @@ pub struct LightFieldViewer {
     _tlas: Arc<AccelerationStructure>,
     _images: Vec<Arc<Image>>,
     _vertex_buffer: Arc<Buffer<Vector3<f32>>>,
-    plane_buffer: Arc<Buffer<PlaneInfo>>,
+    plane_buffer: TargetMode<Arc<Buffer<PlaneInfo>>>,
 
     view_emulator: Mutex<ViewEmulator>,
 
@@ -65,8 +65,12 @@ impl LightFieldViewer {
 
         let device = context.device();
 
-        let as_descriptor =
-            Self::create_as_descriptor(context.device(), &tlas, &plane_buffer, &images)?;
+        let as_descriptor = Self::create_as_descriptor(device, &tlas, &plane_buffer, &images)?;
+
+        let as_desc = match &as_descriptor {
+            TargetMode::Single(desc) => desc,
+            TargetMode::Stereo(desc, _) => desc,
+        };
 
         let output_image_desc_layout = DescriptorSetLayout::builder()
             .add_layout_binding(
@@ -75,7 +79,7 @@ impl LightFieldViewer {
                 VK_SHADER_STAGE_RAYGEN_BIT_NV,
                 0,
             )
-            .build(context.device().clone())?;
+            .build(device.clone())?;
 
         let output_image_descriptor =
             Self::create_output_image_descriptor(context, &output_image_desc_layout)?;
@@ -108,7 +112,11 @@ impl LightFieldViewer {
                 None,
                 vec![None],
             )
-            .build(device, &[&as_descriptor, desc, &output_image_desc_layout])?;
+            .build(device, &[as_desc, desc, &output_image_desc_layout])?;
+
+        context
+            .render_core()
+            .set_clear_color([0.2, 0.2, 0.2, 1.0])?;
 
         Ok(Arc::new(LightFieldViewer {
             context: context.clone(),
@@ -165,6 +173,28 @@ impl ContextObject for LightFieldViewer {
     }
 }
 
+impl LightFieldViewer {
+    fn update_view_buffer(
+        view_buffer: &Arc<Buffer<VRTransformations>>,
+        transform: VRTransformations,
+    ) -> VerboseResult<()> {
+        let mut mapped = view_buffer.map_complete()?;
+        mapped[0] = transform;
+
+        Ok(())
+    }
+
+    fn update_plane_buffer(
+        plane_buffer: &Arc<Buffer<PlaneInfo>>,
+        inverted_view: Matrix4<f32>,
+        interpolation: &CPUInterpolation,
+    ) -> VerboseResult<()> {
+        interpolation.calculate_interpolation(inverted_view, plane_buffer.map_complete()?)?;
+
+        Ok(())
+    }
+}
+
 impl TScene for LightFieldViewer {
     fn update(&self) -> VerboseResult<()> {
         let current_time_stemp = self.context.time();
@@ -179,6 +209,47 @@ impl TScene for LightFieldViewer {
             self.fps_count.store(0, SeqCst);
         }
 
+        match (&self.view_buffers, &self.plane_buffer) {
+            (TargetMode::Single(view_buffer), TargetMode::Single(plane_buffer)) => {
+                let inverted_transform =
+                    self.view_emulator.lock()?.simulation_transform().invert()?;
+
+                Self::update_view_buffer(view_buffer, inverted_transform)?;
+                Self::update_plane_buffer(
+                    plane_buffer,
+                    inverted_transform.view,
+                    &self.interpolation,
+                )?;
+            }
+            (
+                TargetMode::Stereo(left_view_buffer, right_view_buffer),
+                TargetMode::Stereo(left_plane_buffer, right_plane_buffer),
+            ) => {
+                let (left_transform, right_transform) = self
+                    .context
+                    .render_core()
+                    .transformations()?
+                    .ok_or("expected vr transformations")?;
+
+                let left_inverted_transform = left_transform.invert()?;
+                Self::update_view_buffer(left_view_buffer, left_inverted_transform)?;
+                Self::update_plane_buffer(
+                    left_plane_buffer,
+                    left_inverted_transform.view,
+                    &self.interpolation,
+                )?;
+
+                let right_inverted_transform = right_transform.invert()?;
+                Self::update_view_buffer(right_view_buffer, right_inverted_transform)?;
+                Self::update_plane_buffer(
+                    right_plane_buffer,
+                    right_inverted_transform.view,
+                    &self.interpolation,
+                )?;
+            }
+            _ => create_error!("wrong setup"),
+        }
+
         Ok(())
     }
 
@@ -186,50 +257,42 @@ impl TScene for LightFieldViewer {
         &self,
         command_buffer: &Arc<CommandBuffer>,
         indices: &TargetMode<usize>,
-        transforms: &Option<TargetMode<VRTransformations>>,
     ) -> VerboseResult<()> {
         match (
             indices,
-            &self.view_buffers,
             &self.transform_descriptor,
+            &self.as_descriptor,
             &self.output_image_descriptor,
             &self.context.render_core().images()?,
         ) {
             (
                 TargetMode::Single(index),
-                TargetMode::Single(view_buffer),
                 TargetMode::Single(example_descriptor),
+                TargetMode::Single(as_descriptor),
                 TargetMode::Single(image_descriptor),
                 TargetMode::Single(target_images),
             ) => {
                 self.render(
                     *index,
                     command_buffer,
-                    view_buffer,
-                    &self.view_emulator.lock()?.simulation_transform(),
                     example_descriptor,
+                    as_descriptor,
                     target_images,
                     image_descriptor,
                 )?;
             }
             (
                 TargetMode::Stereo(left_index, right_index),
-                TargetMode::Stereo(left_view_buffer, right_view_buffer),
                 TargetMode::Stereo(left_descriptor, right_descriptor),
+                TargetMode::Stereo(left_as_descriptor, right_as_descriptor),
                 TargetMode::Stereo(left_image_descriptor, right_image_descriptor),
                 TargetMode::Stereo(left_image, right_image),
             ) => {
-                let (left_transform, right_transform) = transforms
-                    .as_ref()
-                    .ok_or("no transforms present")?
-                    .stereo()?;
-
                 self.render(
                     *left_index,
                     command_buffer,
-                    left_view_buffer,
-                    left_transform,
                     left_descriptor,
+                    left_as_descriptor,
                     left_image,
                     left_image_descriptor,
                 )?;
@@ -237,9 +300,8 @@ impl TScene for LightFieldViewer {
                 self.render(
                     *right_index,
                     command_buffer,
-                    right_view_buffer,
-                    right_transform,
                     right_descriptor,
+                    right_as_descriptor,
                     right_image,
                     right_image_descriptor,
                 )?;
@@ -262,36 +324,11 @@ impl LightFieldViewer {
         &self,
         index: usize,
         command_buffer: &Arc<CommandBuffer>,
-        view_buffer: &Arc<Buffer<VRTransformations>>,
-        transform: &VRTransformations,
         view_descriptor_set: &Arc<DescriptorSet>,
+        as_descriptor_set: &Arc<DescriptorSet>,
         images: &Vec<Arc<Image>>,
         image_descriptor: &Arc<DescriptorSet>,
     ) -> VerboseResult<()> {
-        let inverted_transforms = VRTransformations {
-            proj: transform
-                .proj
-                .invert()
-                .expect("could not invert projection matrix"),
-            view: transform
-                .view
-                .invert()
-                .expect("could not invert view matrix"),
-        };
-
-        {
-            let mapped = self.plane_buffer.map_complete()?;
-
-            self.interpolation
-                .calculate_interpolation(inverted_transforms.view, mapped)?;
-        }
-
-        // update
-        {
-            let mut mapped = view_buffer.map_complete()?;
-            mapped[0] = inverted_transforms;
-        }
-
         let image = &images[index];
         image_descriptor.update(&[DescriptorWrite::storage_images(0, &[image])
             .change_image_layout(VK_IMAGE_LAYOUT_GENERAL)]);
@@ -300,7 +337,7 @@ impl LightFieldViewer {
 
         command_buffer.bind_pipeline(&self.ray_tracing_pipeline)?;
         command_buffer.bind_descriptor_sets_minimal(&[
-            &self.as_descriptor,
+            as_descriptor_set,
             view_descriptor_set,
             image_descriptor,
         ])?;
@@ -362,9 +399,9 @@ impl LightFieldViewer {
     fn create_as_descriptor(
         device: &Arc<Device>,
         tlas: &Arc<AccelerationStructure>,
-        plane_buffer: &Arc<Buffer<PlaneInfo>>,
+        plane_buffer: &TargetMode<Arc<Buffer<PlaneInfo>>>,
         images: &Vec<Arc<Image>>,
-    ) -> VerboseResult<Arc<DescriptorSet>> {
+    ) -> VerboseResult<TargetMode<Arc<DescriptorSet>>> {
         let descriptor_set_layout = DescriptorSetLayout::builder()
             .add_layout_binding(
                 0,
@@ -387,21 +424,52 @@ impl LightFieldViewer {
             .change_descriptor_count(images.len() as u32)
             .build(device.clone())?;
 
-        let descriptor_pool = DescriptorPool::builder()
-            .set_layout(descriptor_set_layout)
-            .build(device.clone())?;
-
-        let descriptor_set = DescriptorPool::prepare_set(&descriptor_pool).allocate()?;
-
         let image_refs: Vec<&Arc<Image>> = images.iter().map(|image| image).collect();
 
-        descriptor_set.update(&[
-            DescriptorWrite::acceleration_structures(0, &[tlas]),
-            DescriptorWrite::storage_buffers(1, &[plane_buffer]),
-            DescriptorWrite::combined_samplers(2, &image_refs),
-        ]);
+        match plane_buffer {
+            TargetMode::Single(plane_buffer) => {
+                let descriptor_pool = DescriptorPool::builder()
+                    .set_layout(descriptor_set_layout)
+                    .build(device.clone())?;
 
-        Ok(descriptor_set)
+                let descriptor_set = DescriptorPool::prepare_set(&descriptor_pool).allocate()?;
+
+                descriptor_set.update(&[
+                    DescriptorWrite::acceleration_structures(0, &[tlas]),
+                    DescriptorWrite::storage_buffers(1, &[plane_buffer]),
+                    DescriptorWrite::combined_samplers(2, &image_refs),
+                ]);
+
+                Ok(TargetMode::Single(descriptor_set))
+            }
+            TargetMode::Stereo(left_plane_buffer, right_plane_buffer) => {
+                let left_desc_pool = DescriptorPool::builder()
+                    .set_layout(descriptor_set_layout.clone())
+                    .build(device.clone())?;
+
+                let left_desc_set = DescriptorPool::prepare_set(&left_desc_pool).allocate()?;
+
+                left_desc_set.update(&[
+                    DescriptorWrite::acceleration_structures(0, &[tlas]),
+                    DescriptorWrite::storage_buffers(1, &[left_plane_buffer]),
+                    DescriptorWrite::combined_samplers(2, &image_refs),
+                ]);
+
+                let right_desc_pool = DescriptorPool::builder()
+                    .set_layout(descriptor_set_layout)
+                    .build(device.clone())?;
+
+                let right_desc_set = DescriptorPool::prepare_set(&right_desc_pool).allocate()?;
+
+                right_desc_set.update(&[
+                    DescriptorWrite::acceleration_structures(0, &[tlas]),
+                    DescriptorWrite::storage_buffers(1, &[right_plane_buffer]),
+                    DescriptorWrite::combined_samplers(2, &image_refs),
+                ]);
+
+                Ok(TargetMode::Stereo(left_desc_set, right_desc_set))
+            }
+        }
     }
 
     fn create_transform_descriptor(
@@ -459,7 +527,7 @@ impl LightFieldViewer {
         Arc<AccelerationStructure>,
         Arc<AccelerationStructure>,
         Arc<Buffer<Vector3<f32>>>,
-        Arc<Buffer<PlaneInfo>>,
+        TargetMode<Arc<Buffer<PlaneInfo>>>,
         Vec<Arc<Image>>,
         CPUInterpolation,
     )> {
@@ -541,7 +609,29 @@ impl LightFieldViewer {
             Buffer::into_device_local(vertex_cpu_buffer, &command_buffer, context.queue())?;
 
         // --- create plane info buffer ---
-        let plane_buffer = Buffer::builder()
+        let plane_buffer = match context.render_core().images()? {
+            TargetMode::Single(_) => TargetMode::Single(
+                Buffer::builder()
+                    .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                    .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+                    .set_data(&plane_infos)
+                    .build(context.device().clone())?,
+            ),
+            TargetMode::Stereo(_, _) => TargetMode::Stereo(
+                Buffer::builder()
+                    .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                    .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+                    .set_data(&plane_infos)
+                    .build(context.device().clone())?,
+                Buffer::builder()
+                    .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                    .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+                    .set_data(&plane_infos)
+                    .build(context.device().clone())?,
+            ),
+        };
+
+        Buffer::builder()
             .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
             .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
             .set_data(&plane_infos)
@@ -605,34 +695,9 @@ pub struct PlaneInfo {
     pub weights: Vector4<f32>,
 }
 
-// // Indices are [First Index; Last Index[
-// #[derive(Debug, Clone)]
-// pub struct PlaneVertex {
-//     // (Position (vec3), First Index (f32))
-//     pub position_first: Vector4<f32>,
-
-//     // (Normal (vec3), Last Index (f32))
-//     pub normal_last: Vector4<f32>,
-// }
-
 #[derive(Debug, Clone)]
 pub struct PlaneImageInfo {
     pub ratios: PlaneImageRatios,
     pub center: Vector2<f32>,
     pub image_index: u32,
 }
-
-// #[derive(Clone)]
-// pub struct InfoSelector {
-//     pub indices: [i32; 4],
-//     pub weights: [f32; 4],
-// }
-
-// impl Default for InfoSelector {
-//     fn default() -> Self {
-//         InfoSelector {
-//             indices: [-1; 4],
-//             weights: [0.0; 4],
-//         }
-//     }
-// }

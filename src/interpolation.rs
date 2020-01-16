@@ -4,8 +4,51 @@ use context::prelude::*;
 use super::light_field::light_field_data::LightFieldFrustum;
 use super::light_field_viewer::{PlaneImageInfo, PlaneInfo};
 
+use ordered_float::OrderedFloat;
+use std::collections::BinaryHeap;
 use std::f32;
 use std::ops::IndexMut;
+
+#[derive(Eq, Debug)]
+struct IndexedFloat {
+    index: u32,
+    value: OrderedFloat<f32>,
+}
+
+impl IndexedFloat {
+    fn new(index: u32, value: f32) -> Self {
+        IndexedFloat {
+            index,
+            value: OrderedFloat(value),
+        }
+    }
+
+    fn index(&self) -> usize {
+        self.index as usize
+    }
+
+    fn value(&self) -> f32 {
+        self.value.0
+    }
+}
+
+impl Ord for IndexedFloat {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl PartialOrd for IndexedFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for IndexedFloat {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
 
 struct Plane {
     top_left: Vector3<f32>,
@@ -388,18 +431,41 @@ impl CPUInterpolation {
     ) -> (f32, f32, f32, f32) {
         let total_distance = first_distance + second_distance + third_distance + fourth_distance;
 
-        // ------------------------------------------------------------------------------
-        // ---------------------------------   TODO   -----------------------------------
-        // ------------------------------------------------------------------------------
         let first_weight = first_distance / total_distance;
         let second_weight = second_distance / total_distance;
         let third_weight = third_distance / total_distance;
         let fourth_weight = fourth_distance / total_distance;
-        // ------------------------------------------------------------------------------
-        // ---------------------------------   TODO   -----------------------------------
-        // ------------------------------------------------------------------------------
 
-        (first_weight, second_weight, third_weight, fourth_weight)
+        let mut distances = BinaryHeap::new();
+
+        distances.push(IndexedFloat::new(0, first_distance));
+        distances.push(IndexedFloat::new(1, second_distance));
+        distances.push(IndexedFloat::new(2, third_distance));
+        distances.push(IndexedFloat::new(3, fourth_distance));
+
+        let distances_vec = distances.into_sorted_vec();
+
+        let mut weights = BinaryHeap::new();
+
+        weights.push(IndexedFloat::new(0, first_weight));
+        weights.push(IndexedFloat::new(1, second_weight));
+        weights.push(IndexedFloat::new(2, third_weight));
+        weights.push(IndexedFloat::new(3, fourth_weight));
+
+        let weights_vec = weights.into_sorted_vec();
+
+        let mut output_weights = [0.0; 4];
+
+        for (distance, weight) in distances_vec.iter().zip(weights_vec.iter().rev()) {
+            output_weights[distance.index()] = weight.value();
+        }
+
+        (
+            output_weights[0],
+            output_weights[1],
+            output_weights[2],
+            output_weights[2],
+        )
     }
 
     #[inline]
