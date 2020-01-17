@@ -12,12 +12,26 @@ use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector
 use super::{
     interpolation::CPUInterpolation,
     light_field::{light_field_data::PlaneImageRatios, LightField},
-    rasterizer::Rasterizer,
+    rasterizer::{Rasterizer, TexturedVertex},
     view_emulator::ViewEmulator,
 };
 
 pub const DEFAULT_FORWARD: Vector3<f32> = vec3(0.0, 0.0, -1.0);
 pub const UP: Vector3<f32> = vec3(0.0, 1.0, 0.0);
+
+struct FeetRenderer {
+    rasterizer: Rasterizer,
+
+    _feet: Arc<Image>,
+    descriptor_set: Arc<DescriptorSet>,
+    vertex_buffer: Arc<Buffer<TexturedVertex>>,
+}
+
+impl FeetRenderer {
+    fn new(context: &Arc<Context>) -> VerboseResult<Self> {
+        todo!()
+    }
+}
 
 pub struct LightFieldViewer {
     context: Arc<Context>,
@@ -43,7 +57,7 @@ pub struct LightFieldViewer {
     fps_count: AtomicU32,
 
     interpolation: CPUInterpolation,
-    rasterizer: Rasterizer,
+    feet: FeetRenderer,
 }
 
 impl LightFieldViewer {
@@ -143,7 +157,7 @@ impl LightFieldViewer {
             fps_count: AtomicU32::new(0),
 
             interpolation,
-            rasterizer: Rasterizer::new(context)?,
+            feet: FeetRenderer::new(context)?,
         }))
     }
 }

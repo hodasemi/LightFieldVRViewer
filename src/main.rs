@@ -1,12 +1,12 @@
 use cgmath::Deg;
 use context::prelude::*;
 
-mod config;
-mod interpolation;
-mod light_field;
-mod light_field_viewer;
-mod rasterizer;
-mod view_emulator;
+pub mod config;
+pub mod interpolation;
+pub mod light_field;
+pub mod light_field_viewer;
+pub mod rasterizer;
+pub mod view_emulator;
 
 use light_field::LightField;
 use light_field_viewer::LightFieldViewer;
@@ -86,7 +86,7 @@ fn create_vr_context() -> VerboseResult<Arc<Context>> {
 fn create_desktop_context(enable_vsync: bool) -> VerboseResult<Arc<Context>> {
     let mut context_builder = Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
-            debugging: false,
+            debugging: true,
             renderdoc: false,
             steam_layer: false,
             use_util: false,
