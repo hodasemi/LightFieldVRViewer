@@ -7,7 +7,6 @@
             "type": "shell",
             "label": "Run Release",
             "command": "cargo run --release",
-            "args": [],
             "presentation": {
                 "clear": true
             },
@@ -16,7 +15,6 @@
                     "$rustc"
                 ]
             },
-            "problemMatcher": [],
             "dependsOn": [
                 "Build shader"
             ]
@@ -25,7 +23,6 @@
             "type": "shell",
             "label": "Run Debug",
             "command": "cargo run",
-            "args": [],
             "presentation": {
                 "clear": true
             },
@@ -34,7 +31,6 @@
                     "$rustc"
                 ]
             },
-            "problemMatcher": [],
             "dependsOn": [
                 "Build shader"
             ]
@@ -43,27 +39,79 @@
             "type": "shell",
             "label": "Update Dependencies",
             "command": "cargo update",
-            "args": [],
-            "problemMatcher": []
         },
         {
             "type": "shell",
-            "label": "Build",
+            "label": "Build debug",
             "command": "cargo build",
-            "args": [],
-            "problemMatcher": []
+            "dependsOn": [
+                "Build shader",
+            ]
         },
         {
             "type": "shell",
             "label": "Build shader",
-            "args": [],
-            "problemMatcher": [],
+            "dependsOn": [
+                "Build closest hit shader",
+                "Build ray generation shader",
+                "Build miss shader",
+                "Build feet vertex shader",
+                "Build feet fragment shader",
+            ]
+        },
+        {
+            "type": "shell",
+            "label": "Build closest hit shader",
             "linux": {
-                "command": "cd shader/ && glslangValidator -V closesthit.rchit -o closesthit.rchit.spv && glslangValidator -V miss.rmiss -o miss.rmiss.spv && glslangValidator -V raygen.rgen -o raygen.rgen.spv",
+                "command": "cd shader/ && glslangValidator -V closesthit.rchit -o closesthit.rchit.spv",
             },
             "windows": {
                 // works in windows powershell
-                "command": "cd shader ; glslangValidator -V closesthit.rchit -o closesthit.rchit.spv ; glslangValidator -V miss.rmiss -o miss.rmiss.spv ; glslangValidator -V raygen.rgen -o raygen.rgen.spv",
+                "command": "cd shader ; glslangValidator -V closesthit.rchit -o closesthit.rchit.spv",
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Build ray generation shader",
+            "linux": {
+                "command": "cd shader/ && glslangValidator -V raygen.rgen -o raygen.rgen.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader ; glslangValidator -V raygen.rgen -o raygen.rgen.spv",
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Build miss shader",
+            "linux": {
+                "command": "cd shader/ && glslangValidator -V miss.rmiss -o miss.rmiss.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader ; glslangValidator -V miss.rmiss -o miss.rmiss.spv",
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Build feet vertex shader",
+            "linux": {
+                "command": "cd shader/ && glslangValidator -V feet.vert -o feet.vert.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader ; glslangValidator -V feet.vert -o feet.vert.spv",
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Build feet fragment shader",
+            "linux": {
+                "command": "cd shader/ && glslangValidator -V feet.frag -o feet.frag.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader ; glslangValidator -V feet.frag -o feet.frag.spv",
             }
         }
     ]

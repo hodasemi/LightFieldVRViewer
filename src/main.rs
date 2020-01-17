@@ -5,6 +5,7 @@ mod config;
 mod interpolation;
 mod light_field;
 mod light_field_viewer;
+mod rasterizer;
 mod view_emulator;
 
 use light_field::LightField;

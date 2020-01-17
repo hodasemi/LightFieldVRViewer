@@ -12,6 +12,7 @@ use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector
 use super::{
     interpolation::CPUInterpolation,
     light_field::{light_field_data::PlaneImageRatios, LightField},
+    rasterizer::Rasterizer,
     view_emulator::ViewEmulator,
 };
 
@@ -42,6 +43,7 @@ pub struct LightFieldViewer {
     fps_count: AtomicU32,
 
     interpolation: CPUInterpolation,
+    rasterizer: Rasterizer,
 }
 
 impl LightFieldViewer {
@@ -141,6 +143,7 @@ impl LightFieldViewer {
             fps_count: AtomicU32::new(0),
 
             interpolation,
+            rasterizer: Rasterizer::new(context)?,
         }))
     }
 }
