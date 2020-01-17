@@ -25,6 +25,14 @@ impl Rasterizer {
         })
     }
 
+    pub fn pipelines(&self) -> &TargetMode<Arc<Pipeline>> {
+        &self.pipelines
+    }
+
+    pub fn render_targets(&self) -> &TargetMode<RenderTarget> {
+        &self.render_targets
+    }
+
     fn create_pipelines(
         context: &Arc<Context>,
         render_targets: &TargetMode<RenderTarget>,
@@ -54,6 +62,8 @@ impl Rasterizer {
                 &pipeline_layout,
                 render_target.render_pass(),
                 0,
+                render_target.width(),
+                render_target.height(),
             )?)),
             TargetMode::Stereo(left_render_target, right_render_target) => Ok(TargetMode::Stereo(
                 Self::create_pipeline(
@@ -61,12 +71,16 @@ impl Rasterizer {
                     &pipeline_layout,
                     left_render_target.render_pass(),
                     0,
+                    left_render_target.width(),
+                    left_render_target.height(),
                 )?,
                 Self::create_pipeline(
                     context.device(),
                     &pipeline_layout,
                     right_render_target.render_pass(),
                     0,
+                    right_render_target.width(),
+                    right_render_target.height(),
                 )?,
             )),
         }
@@ -89,6 +103,8 @@ impl Rasterizer {
         pipeline_layout: &Arc<PipelineLayout>,
         render_pass: &Arc<RenderPass>,
         subpass: u32,
+        width: u32,
+        height: u32,
     ) -> VerboseResult<Arc<Pipeline>> {
         let vertex_shader_text = include_bytes!("../shader/feet.vert.spv");
         let fragment_shader_text = include_bytes!("../shader/feet.frag.spv");
@@ -131,6 +147,18 @@ impl Rasterizer {
             .default_color_blend(vec![VkPipelineColorBlendAttachmentState::default()])
             .default_rasterization(VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE)
             .default_multisample(VK_SAMPLE_COUNT_1_BIT)
+            .add_viewport(VkViewport {
+                x: 0.0,
+                y: 0.0,
+                width: width as f32,
+                height: height as f32,
+                minDepth: 0.0,
+                maxDepth: 1.0,
+            })
+            .add_scissor(VkRect2D {
+                offset: VkOffset2D { x: 0, y: 0 },
+                extent: VkExtent2D { width, height },
+            })
             .build(device.clone(), pipeline_layout, render_pass, subpass)
     }
 

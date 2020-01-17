@@ -3,11 +3,11 @@ use context::ContextObject;
 
 use std::sync::{
     atomic::{AtomicU32, Ordering::SeqCst},
-    Arc, Mutex,
+    Arc, Mutex, RwLock,
 };
 use std::time::Duration;
 
-use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
+use cgmath::{vec2, vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
 
 use super::{
     interpolation::CPUInterpolation,
@@ -20,7 +20,7 @@ pub const DEFAULT_FORWARD: Vector3<f32> = vec3(0.0, 0.0, -1.0);
 pub const UP: Vector3<f32> = vec3(0.0, 1.0, 0.0);
 
 struct FeetRenderer {
-    rasterizer: Rasterizer,
+    rasterizer: RwLock<Rasterizer>,
 
     _feet: Arc<Image>,
     descriptor_set: Arc<DescriptorSet>,
@@ -28,8 +28,116 @@ struct FeetRenderer {
 }
 
 impl FeetRenderer {
-    fn new(context: &Arc<Context>) -> VerboseResult<Self> {
-        todo!()
+    fn new(context: &Arc<Context>, light_fields: &[LightField]) -> VerboseResult<Self> {
+        let feet_image = Image::from_file("feet.png")?
+            .nearest_sampler()
+            .build(context.device(), context.queue())?;
+
+        let descriptor_layout = DescriptorSetLayout::builder()
+            .add_layout_binding(
+                0,
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                0,
+            )
+            .build(context.device().clone())?;
+
+        let descriptor_pool = DescriptorPool::builder()
+            .set_layout(descriptor_layout)
+            .build(context.device().clone())?;
+
+        let descriptor_set = DescriptorPool::prepare_set(&descriptor_pool).allocate()?;
+
+        descriptor_set.update(&[DescriptorWrite::combined_samplers(0, &[&feet_image])]);
+
+        let mut vertex_data = Vec::new();
+
+        let foot_size_m = 0.4;
+
+        for light_field in light_fields.iter() {
+            let forward = (foot_size_m / 2.0) * light_field.direction;
+            let right = (foot_size_m / 2.0) * light_field.right;
+
+            let mut left_top = light_field.center + forward - right;
+            let mut right_top = light_field.center + forward + right;
+            let mut left_bottom = light_field.center - forward - right;
+            let mut right_bottom = light_field.center - forward + right;
+
+            left_top.y = 0.0;
+            right_top.y = 0.0;
+            left_bottom.y = 0.0;
+            right_bottom.y = 0.0;
+
+            vertex_data.push(TexturedVertex {
+                position: left_top,
+                uv: vec2(0.0, 0.0),
+            });
+
+            vertex_data.push(TexturedVertex {
+                position: left_bottom,
+                uv: vec2(0.0, 1.0),
+            });
+
+            vertex_data.push(TexturedVertex {
+                position: right_bottom,
+                uv: vec2(1.0, 1.0),
+            });
+
+            vertex_data.push(TexturedVertex {
+                position: right_bottom,
+                uv: vec2(1.0, 1.0),
+            });
+
+            vertex_data.push(TexturedVertex {
+                position: right_top,
+                uv: vec2(1.0, 0.0),
+            });
+
+            vertex_data.push(TexturedVertex {
+                position: left_top,
+                uv: vec2(0.0, 0.0),
+            });
+        }
+
+        let cpu_vertex_buffer = Buffer::builder()
+            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+            .set_usage(VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
+            .set_data(&vertex_data)
+            .build(context.device().clone())?;
+
+        let command_buffer = context.render_core().allocate_primary_buffer()?;
+
+        let gpu_vertex_buffer =
+            Buffer::into_device_local(cpu_vertex_buffer, &command_buffer, context.queue())?;
+
+        Ok(FeetRenderer {
+            rasterizer: RwLock::new(Rasterizer::new(context)?),
+
+            _feet: feet_image,
+            descriptor_set,
+            vertex_buffer: gpu_vertex_buffer,
+        })
+    }
+
+    fn render(
+        &self,
+        command_buffer: &Arc<CommandBuffer>,
+        pipeline: &Arc<Pipeline>,
+        render_target: &RenderTarget,
+        index: usize,
+        transforms: VRTransformations,
+    ) -> VerboseResult<()> {
+        render_target.begin(command_buffer, VK_SUBPASS_CONTENTS_INLINE, index);
+
+        command_buffer.bind_pipeline(pipeline)?;
+        command_buffer.bind_descriptor_sets_minimal(&[&self.descriptor_set])?;
+        command_buffer.push_constants(VK_SHADER_STAGE_VERTEX_BIT, &transforms)?;
+        command_buffer.bind_vertex_buffer(&self.vertex_buffer);
+        command_buffer.draw_complete_single_instance(self.vertex_buffer.size() as u32);
+
+        render_target.end(command_buffer);
+
+        Ok(())
     }
 }
 
@@ -67,6 +175,8 @@ impl LightFieldViewer {
         turn_speed: Deg<f32>,
         movement_speed: f32,
     ) -> VerboseResult<Arc<Self>> {
+        let feet_renderer = FeetRenderer::new(context, &light_fields)?;
+
         let (blas, tlas, vertex_buffer, plane_buffer, images, interpolation) =
             Self::create_scene_data(context, light_fields)?;
 
@@ -157,7 +267,7 @@ impl LightFieldViewer {
             fps_count: AtomicU32::new(0),
 
             interpolation,
-            feet: FeetRenderer::new(context)?,
+            feet: feet_renderer,
         }))
     }
 }
@@ -185,28 +295,6 @@ impl ContextObject for LightFieldViewer {
                 _ => (),
             }
         }
-
-        Ok(())
-    }
-}
-
-impl LightFieldViewer {
-    fn update_view_buffer(
-        view_buffer: &Arc<Buffer<VRTransformations>>,
-        transform: VRTransformations,
-    ) -> VerboseResult<()> {
-        let mut mapped = view_buffer.map_complete()?;
-        mapped[0] = transform;
-
-        Ok(())
-    }
-
-    fn update_plane_buffer(
-        plane_buffer: &Arc<Buffer<PlaneInfo>>,
-        inverted_view: Matrix4<f32>,
-        interpolation: &CPUInterpolation,
-    ) -> VerboseResult<()> {
-        interpolation.calculate_interpolation(inverted_view, plane_buffer.map_complete()?)?;
 
         Ok(())
     }
@@ -275,12 +363,16 @@ impl TScene for LightFieldViewer {
         command_buffer: &Arc<CommandBuffer>,
         indices: &TargetMode<usize>,
     ) -> VerboseResult<()> {
+        let rasterizer = self.feet.rasterizer.read()?;
+
         match (
             indices,
             &self.transform_descriptor,
             &self.as_descriptor,
             &self.output_image_descriptor,
             &self.context.render_core().images()?,
+            rasterizer.pipelines(),
+            rasterizer.render_targets(),
         ) {
             (
                 TargetMode::Single(index),
@@ -288,7 +380,17 @@ impl TScene for LightFieldViewer {
                 TargetMode::Single(as_descriptor),
                 TargetMode::Single(image_descriptor),
                 TargetMode::Single(target_images),
+                TargetMode::Single(feet_pipeline),
+                TargetMode::Single(feet_render_target),
             ) => {
+                self.feet.render(
+                    command_buffer,
+                    feet_pipeline,
+                    feet_render_target,
+                    *index,
+                    self.view_emulator.lock()?.simulation_transform(),
+                )?;
+
                 self.render(
                     *index,
                     command_buffer,
@@ -304,7 +406,31 @@ impl TScene for LightFieldViewer {
                 TargetMode::Stereo(left_as_descriptor, right_as_descriptor),
                 TargetMode::Stereo(left_image_descriptor, right_image_descriptor),
                 TargetMode::Stereo(left_image, right_image),
+                TargetMode::Stereo(left_feet_pipeline, right_feet_pipeline),
+                TargetMode::Stereo(left_feet_render_target, right_feet_render_target),
             ) => {
+                let (left_transform, right_transform) = self
+                    .context
+                    .render_core()
+                    .transformations()?
+                    .ok_or("expected vr transformations")?;
+
+                self.feet.render(
+                    command_buffer,
+                    left_feet_pipeline,
+                    left_feet_render_target,
+                    *left_index,
+                    left_transform,
+                )?;
+
+                self.feet.render(
+                    command_buffer,
+                    right_feet_pipeline,
+                    right_feet_render_target,
+                    *right_index,
+                    right_transform,
+                )?;
+
                 self.render(
                     *left_index,
                     command_buffer,
@@ -331,6 +457,8 @@ impl TScene for LightFieldViewer {
 
     fn resize(&self) -> VerboseResult<()> {
         self.view_emulator.lock()?.on_resize();
+
+        *self.feet.rasterizer.write()? = Rasterizer::new(&self.context)?;
 
         Ok(())
     }
@@ -535,6 +663,26 @@ impl LightFieldViewer {
             .build(device.clone())?;
 
         Ok(DescriptorPool::prepare_set(&descriptor_pool).allocate()?)
+    }
+
+    fn update_view_buffer(
+        view_buffer: &Arc<Buffer<VRTransformations>>,
+        transform: VRTransformations,
+    ) -> VerboseResult<()> {
+        let mut mapped = view_buffer.map_complete()?;
+        mapped[0] = transform;
+
+        Ok(())
+    }
+
+    fn update_plane_buffer(
+        plane_buffer: &Arc<Buffer<PlaneInfo>>,
+        inverted_view: Matrix4<f32>,
+        interpolation: &CPUInterpolation,
+    ) -> VerboseResult<()> {
+        interpolation.calculate_interpolation(inverted_view, plane_buffer.map_complete()?)?;
+
+        Ok(())
     }
 
     fn create_scene_data(

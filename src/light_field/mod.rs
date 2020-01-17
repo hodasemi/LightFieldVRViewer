@@ -24,6 +24,11 @@ const EPSILON: f32 = 0.5;
 pub struct LightField {
     pub config: Config,
 
+    pub center: Vector3<f32>,
+    pub direction: Vector3<f32>,
+    pub up: Vector3<f32>,
+    pub right: Vector3<f32>,
+
     light_field_data: LightFieldData,
 }
 
@@ -167,6 +172,12 @@ impl LightField {
 
         Ok(LightField {
             config,
+
+            center,
+            direction,
+            up,
+            right,
+
             light_field_data,
         })
     }
