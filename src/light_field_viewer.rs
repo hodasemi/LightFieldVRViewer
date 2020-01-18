@@ -55,18 +55,23 @@ impl FeetRenderer {
         let foot_size_m = 0.4;
 
         for light_field in light_fields.iter() {
-            let forward = (foot_size_m / 2.0) * light_field.direction;
-            let right = (foot_size_m / 2.0) * light_field.right;
+            let length = foot_size_m / 2.0;
 
-            let mut left_top = light_field.center + forward - right;
-            let mut right_top = light_field.center + forward + right;
-            let mut left_bottom = light_field.center - forward - right;
-            let mut right_bottom = light_field.center - forward + right;
+            let mut forward = light_field.direction;
+            forward.y = 0.0;
+            forward = forward.normalize_to(length);
 
-            left_top.y = 0.0;
-            right_top.y = 0.0;
-            left_bottom.y = 0.0;
-            right_bottom.y = 0.0;
+            let mut right = light_field.right;
+            right.y = 0.0;
+            right = right.normalize_to(length);
+
+            let mut center = light_field.center;
+            center.y = 0.0;
+
+            let left_top = center + forward - right;
+            let right_top = center + forward + right;
+            let left_bottom = center - forward - right;
+            let right_bottom = center - forward + right;
 
             vertex_data.push(TexturedVertex {
                 position: left_top,
