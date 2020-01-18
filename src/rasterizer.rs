@@ -46,15 +46,14 @@ impl Rasterizer {
             )
             .build(context.device().clone())?;
 
-        let pipeline_layout = PipelineLayout::new(
-            context.device().clone(),
-            &[&set_layout],
-            &[VkPushConstantRange::new(
+        let pipeline_layout = PipelineLayout::builder()
+            .add_descriptor_set_layout(&set_layout)
+            .add_push_constant(VkPushConstantRange::new(
                 VK_SHADER_STAGE_VERTEX_BIT,
                 0,
                 2 * std::mem::size_of::<Matrix4<f32>>() as u32,
-            )],
-        )?;
+            ))
+            .build(context.device().clone())?;
 
         match render_targets {
             TargetMode::Single(render_target) => Ok(TargetMode::Single(Self::create_pipeline(

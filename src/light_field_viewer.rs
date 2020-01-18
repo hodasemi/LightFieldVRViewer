@@ -210,6 +210,12 @@ impl LightFieldViewer {
         let output_image_descriptor =
             Self::create_output_image_descriptor(context, &output_image_desc_layout)?;
 
+        let pipeline_layout = PipelineLayout::builder()
+            .add_descriptor_set_layout(as_desc)
+            .add_descriptor_set_layout(desc)
+            .add_descriptor_set_layout(&output_image_desc_layout)
+            .build(device.clone())?;
+
         let (pipeline, sbt) = Pipeline::new_ray_tracing()
             .add_shader(
                 ShaderModule::from_slice(
@@ -238,7 +244,7 @@ impl LightFieldViewer {
                 None,
                 vec![None],
             )
-            .build(device, &[as_desc, desc, &output_image_desc_layout])?;
+            .build(device, &pipeline_layout)?;
 
         context
             .render_core()
