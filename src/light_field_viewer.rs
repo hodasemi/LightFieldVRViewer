@@ -252,7 +252,7 @@ impl LightFieldViewer {
 
         context
             .render_core()
-            .set_clear_color([0.2, 0.2, 0.2, 1.0])?;
+            .set_clear_color([1.0, 0.2, 0.2, 1.0])?;
 
         Ok(Arc::new(LightFieldViewer {
             context: context.clone(),
@@ -376,9 +376,9 @@ impl TScene for LightFieldViewer {
         command_buffer: &Arc<CommandBuffer>,
         indices: &TargetMode<usize>,
     ) -> VerboseResult<()> {
-        self.context
-            .render_core()
-            .set_clear_color([0.2, 0.2, 0.2, 1.0])?;
+        // self.context
+        //     .render_core()
+        //     .set_clear_color([0.2, 0.2, 0.2, 1.0])?;
 
         let rasterizer = self.feet.rasterizer.read()?;
 

@@ -123,13 +123,11 @@ impl CPUInterpolation {
 
                 let viewer_is_inside = plane.frustum.check(viewer_point);
 
-                if !viewer_is_inside {
+                if viewer_is_inside {
                     // selector[i].indices = vec4(-1, -1, -1, -1);
                     // selector[i].weights = vec4(0.0, 0.0, 0.0, 0.0);
 
-                    if !found_one {
-                        found_one = true;
-                    }
+                    found_one = true;
 
                     // continue;
                 }
@@ -283,9 +281,9 @@ impl CPUInterpolation {
         }
 
         if !found_one {
-            context
-                .render_core()
-                .set_clear_color([1.0, 0.2, 0.2, 1.0])?;
+            // context
+            //     .render_core()
+            //     .set_clear_color([1.0, 0.2, 0.2, 1.0])?;
         }
 
         Ok(())
@@ -435,6 +433,30 @@ impl CPUInterpolation {
         (first_weight, second_weight)
     }
 
+    fn distance_weighting<'a>(
+        distances: impl ExactSizeIterator<Item = &'a f32> + Clone,
+    ) -> Vec<f32> {
+        let amount = distances.len();
+
+        let total_distance: f32 = distances.clone().sum();
+
+        let inv_weights: Vec<f32> = distances
+            .map(|distance| distance / total_distance)
+            .collect();
+
+        let weights: Vec<f32> = inv_weights
+            .iter()
+            .map(|inverted_weight| inverted_weight / (1.0 / amount as f32))
+            .collect();
+
+        let weight_sum: f32 = weights.iter().sum();
+
+        let normalized_weights: Vec<f32> =
+            weights.iter().map(|weight| weight / weight_sum).collect();
+
+        normalized_weights.iter().cloned().rev().collect()
+    }
+
     #[inline]
     fn weight_from_four(
         first_distance: f32,
@@ -442,41 +464,20 @@ impl CPUInterpolation {
         third_distance: f32,
         fourth_distance: f32,
     ) -> (f32, f32, f32, f32) {
-        let total_distance = first_distance + second_distance + third_distance + fourth_distance;
-
-        let first_weight = first_distance / total_distance;
-        let second_weight = second_distance / total_distance;
-        let third_weight = third_distance / total_distance;
-        let fourth_weight = fourth_distance / total_distance;
-
-        let mut distances = BinaryHeap::new();
-
-        distances.push(IndexedFloat::new(0, first_distance));
-        distances.push(IndexedFloat::new(1, second_distance));
-        distances.push(IndexedFloat::new(2, third_distance));
-        distances.push(IndexedFloat::new(3, fourth_distance));
-
-        let distances_vec = distances.into_sorted_vec();
-
-        let mut weights = BinaryHeap::new();
-
-        weights.push(IndexedFloat::new(0, first_weight));
-        weights.push(IndexedFloat::new(1, second_weight));
-        weights.push(IndexedFloat::new(2, third_weight));
-        weights.push(IndexedFloat::new(3, fourth_weight));
-
-        let weights_vec = weights.into_sorted_vec();
-
-        let mut output_weights = [0.0; 4];
-
-        for (distance, weight) in distances_vec.iter().zip(weights_vec.iter().rev()) {
-            output_weights[distance.index()] = weight.value();
-        }
+        let output_weights = Self::distance_weighting(
+            vec![
+                first_distance,
+                second_distance,
+                third_distance,
+                fourth_distance,
+            ]
+            .iter(),
+        );
 
         let sum: f32 = output_weights.iter().sum();
 
         if (sum - 1.0).abs() > 0.0001 {
-            println!("sum not equal 1.0: sum = {}", sum);
+            panic!("sum not equal 1.0: sum = {}", sum);
         }
 
         (

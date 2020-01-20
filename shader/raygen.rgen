@@ -15,7 +15,7 @@ struct RayPayload {
     float cos;
 };
 
-const int MAX_ITERATION = 20;
+const int MAX_ITERATION = 50;
 
 layout(location = 0) rayPayloadNV RayPayload pay_load;
 layout(location = 1) rayPayloadNV vec4 global_origin;
@@ -23,8 +23,8 @@ layout(location = 1) rayPayloadNV vec4 global_origin;
 vec4 blending(vec4 source, vec4 destination) {
     // color = (source_color * source_factor) op (destination_color * destination_factor)
 
-    // float source_factor = source.w;
-    float source_factor = 1.0;
+    float source_factor = source.w;
+    // float source_factor = 1.0;
     float destination_factor = (1.0 - source.w);
 
     vec3 color = (source.xyz * source_factor) + (destination.xyz * destination_factor);
