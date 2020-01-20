@@ -107,10 +107,13 @@ impl CPUInterpolation {
 
     pub fn calculate_interpolation(
         &self,
+        context: &Context,
         inv_view: Matrix4<f32>,
         mut selector: impl IndexMut<usize, Output = PlaneInfo>,
     ) -> VerboseResult<()> {
         let my_position = (inv_view * vec4(0.0, 0.0, 0.0, 1.0)).truncate();
+
+        let mut found_one = false;
 
         for (i, plane) in self.planes.iter().enumerate() {
             if let Some(viewer_point) =
@@ -118,14 +121,18 @@ impl CPUInterpolation {
             {
                 let viewer_barycentric = Self::calculate_barycentrics(&plane, viewer_point);
 
-                // let viewer_is_inside = plane.frustum.check(viewer_point);
+                let viewer_is_inside = plane.frustum.check(viewer_point);
 
-                // if !viewer_is_inside {
-                //     selector[i].indices = vec4(-1, -1, -1, -1);
-                //     selector[i].weights = vec4(0.0, 0.0, 0.0, 0.0);
+                if !viewer_is_inside {
+                    // selector[i].indices = vec4(-1, -1, -1, -1);
+                    // selector[i].weights = vec4(0.0, 0.0, 0.0, 0.0);
 
-                //     continue;
-                // }
+                    if !found_one {
+                        found_one = true;
+                    }
+
+                    // continue;
+                }
 
                 /*
                                     |                   |
@@ -273,6 +280,12 @@ impl CPUInterpolation {
                     }
                 }
             }
+        }
+
+        if !found_one {
+            context
+                .render_core()
+                .set_clear_color([1.0, 0.2, 0.2, 1.0])?;
         }
 
         Ok(())
@@ -458,6 +471,12 @@ impl CPUInterpolation {
 
         for (distance, weight) in distances_vec.iter().zip(weights_vec.iter().rev()) {
             output_weights[distance.index()] = weight.value();
+        }
+
+        let sum: f32 = output_weights.iter().sum();
+
+        if (sum - 1.0).abs() > 0.0001 {
+            println!("sum not equal 1.0: sum = {}", sum);
         }
 
         (

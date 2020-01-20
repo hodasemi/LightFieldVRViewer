@@ -53,17 +53,17 @@ impl LightFieldFrustum {
     }
 
     pub fn check(&self, point: Vector3<f32>) -> bool {
-        self.left.distance(point) >= 0.0
-            && self.right.distance(point) >= 0.0
-            && self.top.distance(point) >= 0.0
-            && self.bottom.distance(point) >= 0.0
+        self.left.is_above(point)
+            && self.right.is_above(point)
+            && self.top.is_above(point)
+            && self.bottom.is_above(point)
     }
 }
 
 #[derive(Debug, Clone)]
 struct FrustumPlane {
+    point: Vector3<f32>,
     normal: Vector3<f32>,
-    d: f32,
 }
 
 impl FrustumPlane {
@@ -73,14 +73,20 @@ impl FrustumPlane {
         second_direction: Vector3<f32>,
     ) -> Self {
         let normal = first_direction.cross(second_direction).normalize();
-        let d = point_in_plane.dot(normal);
 
-        FrustumPlane { normal, d }
+        FrustumPlane {
+            point: point_in_plane,
+            normal,
+        }
     }
 
-    // https://en.wikipedia.org/wiki/Plane_%28geometry%29#Distance_from_a_point_to_a_plane
-    fn distance(&self, p: Vector3<f32>) -> f32 {
-        self.normal.x * p.x + self.normal.y * p.y + self.normal.z * p.z + self.d
+    // // https://en.wikipedia.org/wiki/Plane_%28geometry%29#Distance_from_a_point_to_a_plane
+    // fn distance(&self, p: Vector3<f32>) -> f32 {
+    //     self.normal.x * p.x + self.normal.y * p.y + self.normal.z * p.z + self.d
+    // }
+
+    fn is_above(&self, p: Vector3<f32>) -> bool {
+        self.normal.dot(p - self.point) > 0.0
     }
 }
 

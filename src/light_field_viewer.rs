@@ -53,10 +53,9 @@ impl FeetRenderer {
         let mut vertex_data = Vec::new();
 
         let foot_size_m = 0.4;
+        let length = foot_size_m / 2.0;
 
         for light_field in light_fields.iter() {
-            let length = foot_size_m / 2.0;
-
             let mut forward = light_field.direction;
             forward.y = 0.0;
             forward = forward.normalize_to(length);
@@ -332,6 +331,7 @@ impl TScene for LightFieldViewer {
 
                 Self::update_view_buffer(view_buffer, inverted_transform)?;
                 Self::update_plane_buffer(
+                    &self.context,
                     plane_buffer,
                     inverted_transform.view,
                     &self.interpolation,
@@ -350,6 +350,7 @@ impl TScene for LightFieldViewer {
                 let left_inverted_transform = left_transform.invert()?;
                 Self::update_view_buffer(left_view_buffer, left_inverted_transform)?;
                 Self::update_plane_buffer(
+                    &self.context,
                     left_plane_buffer,
                     left_inverted_transform.view,
                     &self.interpolation,
@@ -358,6 +359,7 @@ impl TScene for LightFieldViewer {
                 let right_inverted_transform = right_transform.invert()?;
                 Self::update_view_buffer(right_view_buffer, right_inverted_transform)?;
                 Self::update_plane_buffer(
+                    &self.context,
                     right_plane_buffer,
                     right_inverted_transform.view,
                     &self.interpolation,
@@ -374,6 +376,10 @@ impl TScene for LightFieldViewer {
         command_buffer: &Arc<CommandBuffer>,
         indices: &TargetMode<usize>,
     ) -> VerboseResult<()> {
+        self.context
+            .render_core()
+            .set_clear_color([0.2, 0.2, 0.2, 1.0])?;
+
         let rasterizer = self.feet.rasterizer.read()?;
 
         match (
@@ -687,11 +693,16 @@ impl LightFieldViewer {
     }
 
     fn update_plane_buffer(
+        context: &Arc<Context>,
         plane_buffer: &Arc<Buffer<PlaneInfo>>,
         inverted_view: Matrix4<f32>,
         interpolation: &CPUInterpolation,
     ) -> VerboseResult<()> {
-        interpolation.calculate_interpolation(inverted_view, plane_buffer.map_complete()?)?;
+        interpolation.calculate_interpolation(
+            context,
+            inverted_view,
+            plane_buffer.map_complete()?,
+        )?;
 
         Ok(())
     }
@@ -776,7 +787,9 @@ impl LightFieldViewer {
 
         // --- create vertex buffer ---
         let vertex_cpu_buffer = Buffer::builder()
-            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+            .set_memory_properties(
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+            )
             .set_usage(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
             .set_data(&vertex_data)
             .build(context.device().clone())?;
@@ -788,19 +801,31 @@ impl LightFieldViewer {
         let plane_buffer = match context.render_core().images()? {
             TargetMode::Single(_) => TargetMode::Single(
                 Buffer::builder()
-                    .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                    .set_memory_properties(
+                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                            | VK_MEMORY_PROPERTY_HOST_CACHED_BIT
+                            | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    )
                     .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
                     .set_data(&plane_infos)
                     .build(context.device().clone())?,
             ),
             TargetMode::Stereo(_, _) => TargetMode::Stereo(
                 Buffer::builder()
-                    .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                    .set_memory_properties(
+                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                            | VK_MEMORY_PROPERTY_HOST_CACHED_BIT
+                            | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    )
                     .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
                     .set_data(&plane_infos)
                     .build(context.device().clone())?,
                 Buffer::builder()
-                    .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                    .set_memory_properties(
+                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                            | VK_MEMORY_PROPERTY_HOST_CACHED_BIT
+                            | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    )
                     .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
                     .set_data(&plane_infos)
                     .build(context.device().clone())?,
