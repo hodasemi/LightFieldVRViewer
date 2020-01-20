@@ -1,4 +1,4 @@
-use cgmath::{vec2, vec4, InnerSpace, Matrix4, Vector2, Vector3, Vector4};
+use cgmath::{vec2, vec4, InnerSpace, Matrix4, Vector2, Vector3, Vector4, Zero};
 use context::prelude::*;
 
 use super::light_field::light_field_data::LightFieldFrustum;
@@ -168,25 +168,25 @@ impl CPUInterpolation {
                     // check horizontal axis
                     if viewer_barycentric.x < 0.0 {
                         // Above, Left Side
-                        let (indices, weights) = Self::selector_of_one(
+                        let (indices, bary) = Self::selector_of_one(
                             self.find_closest_bottom_right(plane, vec2(0.0001, 0.0001)),
                             "bottom right",
                         )?;
 
                         selector[i].indices = indices;
-                        selector[i].weights = weights;
+                        selector[i].bary = bary;
                     } else if viewer_barycentric.x > 1.0 {
                         // Above, Right Side
-                        let (indices, weights) = Self::selector_of_one(
+                        let (indices, bary) = Self::selector_of_one(
                             self.find_closest_bottom_left(plane, vec2(0.9999, 0.0001)),
                             "bottom left",
                         )?;
 
                         selector[i].indices = indices;
-                        selector[i].weights = weights;
+                        selector[i].bary = bary;
                     } else {
                         // Above Center
-                        let (indices, weights) = Self::selector_of_two(
+                        let (indices, bary) = Self::selector_of_two_x(
                             self.find_closest_bottom_left(
                                 plane,
                                 vec2(viewer_barycentric.x, 0.0001),
@@ -195,11 +195,12 @@ impl CPUInterpolation {
                                 plane,
                                 vec2(viewer_barycentric.x, 0.0001),
                             ),
+                            vec2(viewer_barycentric.x, 0.0001),
                             "bottom left and bottom right",
                         )?;
 
                         selector[i].indices = indices;
-                        selector[i].weights = weights;
+                        selector[i].bary = bary;
                     }
                 }
                 // check for below
@@ -207,32 +208,33 @@ impl CPUInterpolation {
                     // check horizontal axis
                     if viewer_barycentric.x < 0.0 {
                         // Below, Left Side
-                        let (indices, weights) = Self::selector_of_one(
+                        let (indices, bary) = Self::selector_of_one(
                             self.find_closest_top_right(plane, vec2(0.0001, 0.9999)),
                             "top right",
                         )?;
 
                         selector[i].indices = indices;
-                        selector[i].weights = weights;
+                        selector[i].bary = bary;
                     } else if viewer_barycentric.x > 1.0 {
                         // Below, Right Side
-                        let (indices, weights) = Self::selector_of_one(
+                        let (indices, bary) = Self::selector_of_one(
                             self.find_closest_top_left(plane, vec2(0.9999, 0.9999)),
                             "top left",
                         )?;
 
                         selector[i].indices = indices;
-                        selector[i].weights = weights;
+                        selector[i].bary = bary;
                     } else {
                         // Below Center
-                        let (indices, weights) = Self::selector_of_two(
-                            self.find_closest_top_right(plane, vec2(viewer_barycentric.x, 0.9999)),
+                        let (indices, bary) = Self::selector_of_two_x(
                             self.find_closest_top_left(plane, vec2(viewer_barycentric.x, 0.9999)),
+                            self.find_closest_top_right(plane, vec2(viewer_barycentric.x, 0.9999)),
+                            vec2(viewer_barycentric.x, 0.9999),
                             "top right and top left",
                         )?;
 
                         selector[i].indices = indices;
-                        selector[i].weights = weights;
+                        selector[i].bary = bary;
                     }
                 }
                 // we are in the center, vertically
@@ -240,41 +242,44 @@ impl CPUInterpolation {
                     // check horizontal axis
                     if viewer_barycentric.x < 0.0 {
                         // Left Side
-                        let (indices, weights) = Self::selector_of_two(
+                        let (indices, bary) = Self::selector_of_two_y(
+                            self.find_closest_top_right(plane, vec2(0.0001, viewer_barycentric.y)),
                             self.find_closest_bottom_right(
                                 plane,
                                 vec2(0.0001, viewer_barycentric.y),
                             ),
-                            self.find_closest_top_right(plane, vec2(0.0001, viewer_barycentric.y)),
+                            vec2(0.0001, viewer_barycentric.y),
                             "bottom right and top right",
                         )?;
 
                         selector[i].indices = indices;
-                        selector[i].weights = weights;
+                        selector[i].bary = bary;
                     } else if viewer_barycentric.x > 1.0 {
                         // Right Side
-                        let (indices, weights) = Self::selector_of_two(
+                        let (indices, bary) = Self::selector_of_two_y(
+                            self.find_closest_top_left(plane, vec2(0.9999, viewer_barycentric.y)),
                             self.find_closest_bottom_left(
                                 plane,
                                 vec2(0.9999, viewer_barycentric.y),
                             ),
-                            self.find_closest_top_left(plane, vec2(0.9999, viewer_barycentric.y)),
+                            vec2(0.9999, viewer_barycentric.y),
                             "bottom left and top left",
                         )?;
 
                         selector[i].indices = indices;
-                        selector[i].weights = weights;
+                        selector[i].bary = bary;
                     } else {
                         // We hit the plane
-                        let (indices, weights) = Self::selector_of_four(
+                        let (indices, bary) = Self::selector_of_four(
                             self.find_closest_top_left(plane, viewer_barycentric),
                             self.find_closest_bottom_left(plane, viewer_barycentric),
                             self.find_closest_top_right(plane, viewer_barycentric),
                             self.find_closest_bottom_right(plane, viewer_barycentric),
+                            viewer_barycentric,
                         )?;
 
                         selector[i].indices = indices;
-                        selector[i].weights = weights;
+                        selector[i].bary = bary;
                     }
                 }
             }
@@ -341,180 +346,126 @@ impl CPUInterpolation {
         normal.dot(target - reference) / normal.magnitude()
     }
 
-    fn find_closest_bottom_right(&self, plane: &Plane, bary: Vector2<f32>) -> Option<(i32, f32)> {
-        self.find_closest(plane, bary, |x_diff, y_diff| {
-            if x_diff < 0.0 {
-                return None;
-            }
-
-            if y_diff < 0.0 {
-                return None;
-            }
-
-            Some(x_diff + y_diff)
-        })
+    fn find_closest_bottom_right(
+        &self,
+        plane: &Plane,
+        bary: Vector2<f32>,
+    ) -> Option<(i32, Vector2<f32>)> {
+        self.find_closest(plane, bary, |x_diff, y_diff| x_diff >= 0.0 && y_diff >= 0.0)
     }
 
-    fn find_closest_top_right(&self, plane: &Plane, bary: Vector2<f32>) -> Option<(i32, f32)> {
-        self.find_closest(plane, bary, |x_diff, y_diff| {
-            if x_diff < 0.0 {
-                return None;
-            }
-
-            if y_diff > 0.0 {
-                return None;
-            }
-
-            Some(x_diff - y_diff)
-        })
+    fn find_closest_top_right(
+        &self,
+        plane: &Plane,
+        bary: Vector2<f32>,
+    ) -> Option<(i32, Vector2<f32>)> {
+        self.find_closest(plane, bary, |x_diff, y_diff| x_diff >= 0.0 && y_diff <= 0.0)
     }
 
-    fn find_closest_bottom_left(&self, plane: &Plane, bary: Vector2<f32>) -> Option<(i32, f32)> {
-        self.find_closest(plane, bary, |x_diff, y_diff| {
-            if x_diff > 0.0 {
-                return None;
-            }
-
-            if y_diff < 0.0 {
-                return None;
-            }
-
-            Some(y_diff - x_diff)
-        })
+    fn find_closest_bottom_left(
+        &self,
+        plane: &Plane,
+        bary: Vector2<f32>,
+    ) -> Option<(i32, Vector2<f32>)> {
+        self.find_closest(plane, bary, |x_diff, y_diff| x_diff <= 0.0 && y_diff >= 0.0)
     }
 
-    fn find_closest_top_left(&self, plane: &Plane, bary: Vector2<f32>) -> Option<(i32, f32)> {
-        self.find_closest(plane, bary, |x_diff, y_diff| {
-            if x_diff > 0.0 {
-                return None;
-            }
-
-            if y_diff > 0.0 {
-                return None;
-            }
-
-            Some(-(x_diff + y_diff))
-        })
+    fn find_closest_top_left(
+        &self,
+        plane: &Plane,
+        bary: Vector2<f32>,
+    ) -> Option<(i32, Vector2<f32>)> {
+        self.find_closest(plane, bary, |x_diff, y_diff| x_diff <= 0.0 && y_diff <= 0.0)
     }
 
     #[inline]
-    fn find_closest<F>(&self, plane: &Plane, bary: Vector2<f32>, f: F) -> Option<(i32, f32)>
+    fn find_closest<F>(
+        &self,
+        plane: &Plane,
+        bary: Vector2<f32>,
+        f: F,
+    ) -> Option<(i32, Vector2<f32>)>
     where
-        F: Fn(f32, f32) -> Option<f32>,
+        F: Fn(f32, f32) -> bool,
     {
         let mut minimal_distance = f32::MAX;
+        let mut info_bary = Vector2::zero();
         let mut image_info_index = None;
 
         for info in plane.image_infos.iter() {
             let x_diff = info.center.x - bary.x;
             let y_diff = info.center.y - bary.y;
 
-            if let Some(new_distance) = f(x_diff, y_diff) {
+            if f(x_diff, y_diff) {
+                let new_distance = vec2(x_diff, y_diff).magnitude();
+
                 if new_distance < minimal_distance {
                     minimal_distance = new_distance;
                     image_info_index = Some(info.image_index);
+                    info_bary = info.center;
                 }
             }
         }
 
         match image_info_index {
-            Some(index) => Some((index as i32, minimal_distance)),
+            Some(index) => Some((index as i32, info_bary)),
             None => None,
         }
     }
 
     #[inline]
-    fn weight_from_two(first_distance: f32, second_distance: f32) -> (f32, f32) {
-        let total_distance = first_distance + second_distance;
-
-        let first_weight = second_distance / total_distance;
-        let second_weight = first_distance / total_distance;
-
-        (first_weight, second_weight)
-    }
-
-    fn distance_weighting<'a>(
-        distances: impl ExactSizeIterator<Item = &'a f32> + Clone,
-    ) -> Vec<f32> {
-        let amount = distances.len();
-
-        let total_distance: f32 = distances.clone().sum();
-
-        let inv_weights: Vec<f32> = distances
-            .map(|distance| distance / total_distance)
-            .collect();
-
-        let weights: Vec<f32> = inv_weights
-            .iter()
-            .map(|inverted_weight| inverted_weight / (1.0 / amount as f32))
-            .collect();
-
-        let weight_sum: f32 = weights.iter().sum();
-
-        let normalized_weights: Vec<f32> =
-            weights.iter().map(|weight| weight / weight_sum).collect();
-
-        normalized_weights.iter().cloned().rev().collect()
-    }
-
-    #[inline]
-    fn weight_from_four(
-        first_distance: f32,
-        second_distance: f32,
-        third_distance: f32,
-        fourth_distance: f32,
-    ) -> (f32, f32, f32, f32) {
-        let output_weights = Self::distance_weighting(
-            vec![
-                first_distance,
-                second_distance,
-                third_distance,
-                fourth_distance,
-            ]
-            .iter(),
-        );
-
-        let sum: f32 = output_weights.iter().sum();
-
-        if (sum - 1.0).abs() > 0.0001 {
-            panic!("sum not equal 1.0: sum = {}", sum);
-        }
-
-        (
-            output_weights[0],
-            output_weights[1],
-            output_weights[2],
-            output_weights[2],
-        )
-    }
-
-    #[inline]
     fn selector_of_one(
-        first: Option<(i32, f32)>,
+        first: Option<(i32, Vector2<f32>)>,
         debug: &str,
-    ) -> VerboseResult<(Vector4<i32>, Vector4<f32>)> {
+    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>)> {
         match first {
-            Some((index, _)) => Ok((vec4(index, -1, -1, -1), vec4(1.0, 0.0, 0.0, 0.0))),
+            Some((index, _)) => Ok((vec4(index, -1, -1, -1), vec2(0.0, 0.0))),
             None => create_error!(format!("nothing could be found for {}", debug)),
         }
     }
 
     #[inline]
-    fn selector_of_two(
-        first: Option<(i32, f32)>,
-        second: Option<(i32, f32)>,
+    fn selector_of_two_y(
+        above: Option<(i32, Vector2<f32>)>,
+        below: Option<(i32, Vector2<f32>)>,
+        barycentric: Vector2<f32>,
         debug: &str,
-    ) -> VerboseResult<(Vector4<i32>, Vector4<f32>)> {
-        match (first, second) {
+    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>)> {
+        match (above, below) {
             // both first and second have been found
-            (Some((first_index, first_distance)), Some((second_index, second_distance))) => {
-                let (first_weight, second_weight) =
-                    Self::weight_from_two(first_distance, second_distance);
+            (Some((above_index, above_center)), Some((below_index, below_center))) => {
+                assert!(above_center.y < below_center.y);
 
-                Ok((
-                    vec4(first_index, second_index, -1, -1),
-                    vec4(first_weight, second_weight, 0.0, 0.0),
-                ))
+                let weight = below_center.y - barycentric.y;
+
+                Ok((vec4(above_index, below_index, -1, -1), vec2(weight, 0.0)))
+            }
+            // only left could be found
+            (Some((index, weight)), None) => Self::selector_of_one(Some((index, weight)), ""),
+            // only right could be found
+            (None, Some((index, weight))) => Self::selector_of_one(Some((index, weight)), ""),
+            // none could be found
+            (None, None) => {
+                create_error!(format!("nothing could be found for {}", debug));
+            }
+        }
+    }
+
+    #[inline]
+    fn selector_of_two_x(
+        left: Option<(i32, Vector2<f32>)>,
+        right: Option<(i32, Vector2<f32>)>,
+        barycentric: Vector2<f32>,
+        debug: &str,
+    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>)> {
+        match (left, right) {
+            // both first and second have been found
+            (Some((left_index, left_center)), Some((right_index, right_center))) => {
+                assert!(left_center.x < right_center.x);
+
+                let weight = right_center.x - barycentric.x;
+
+                Ok((vec4(left_index, right_index, -1, -1), vec2(weight, 0.0)))
             }
             // only left could be found
             (Some((index, weight)), None) => Self::selector_of_one(Some((index, weight)), ""),
@@ -529,26 +480,22 @@ impl CPUInterpolation {
 
     #[inline]
     fn selector_of_four(
-        top_left: Option<(i32, f32)>,
-        bottom_left: Option<(i32, f32)>,
-        top_right: Option<(i32, f32)>,
-        bottom_right: Option<(i32, f32)>,
-    ) -> VerboseResult<(Vector4<i32>, Vector4<f32>)> {
+        top_left: Option<(i32, Vector2<f32>)>,
+        bottom_left: Option<(i32, Vector2<f32>)>,
+        top_right: Option<(i32, Vector2<f32>)>,
+        bottom_right: Option<(i32, Vector2<f32>)>,
+        barycentric: Vector2<f32>,
+    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>)> {
         match (bottom_left, top_left, bottom_right, top_right) {
             // all 4 were found
             (
-                Some((bottom_left_index, bottom_left_distance)),
-                Some((top_left_index, top_left_distance)),
-                Some((bottom_right_index, bottom_right_distance)),
-                Some((top_right_index, top_right_distance)),
+                Some((bottom_left_index, _)),
+                Some((top_left_index, _)),
+                Some((bottom_right_index, bottom_right_center)),
+                Some((top_right_index, _)),
             ) => {
-                let (bottom_left_weight, top_left_weight, bottom_right_weight, top_right_weight) =
-                    Self::weight_from_four(
-                        bottom_left_distance,
-                        top_left_distance,
-                        bottom_right_distance,
-                        top_right_distance,
-                    );
+                let x = bottom_right_center.x - barycentric.x;
+                let y = bottom_right_center.y - barycentric.y;
 
                 Ok((vec4(
                         bottom_left_index,
@@ -556,67 +503,69 @@ impl CPUInterpolation {
                         bottom_right_index,
                         top_right_index,
                     ),
-                    vec4(
-                        bottom_left_weight,
-                        top_left_weight,
-                        bottom_right_weight,
-                        top_right_weight,
-                    )
+                    vec2(x,y)
                 ))
             }
             // only bottom left and bottom right - center above
             (
-                Some((bottom_left_index, bottom_left_distance)),
+                Some((bottom_left_index, bottom_left_center)),
                 None,
-                Some((bottom_right_index, bottom_right_distance)),
+                Some((bottom_right_index, bottom_right_center)),
                 None,
-            ) => Self::selector_of_two(
-                Some((bottom_left_index, bottom_left_distance)),
-                Some((bottom_right_index, bottom_right_distance)),
+            ) => Self::selector_of_two_x(
+                Some((bottom_left_index, bottom_left_center)),
+                Some((bottom_right_index, bottom_right_center)),
+                barycentric,
                 "",
             ),
             // only top left and top right - center below
             (
                 None,
-                Some((top_left_index, top_left_distance)),
+                Some((top_left_index, top_left_center)),
                 None,
-                Some((top_right_index, top_right_distance)),
-            ) => Self::selector_of_two(
-                Some((top_left_index, top_left_distance)),
-                Some((top_right_index, top_right_distance)),
+                Some((top_right_index, top_right_center)),
+            ) => Self::selector_of_two_x(
+                Some((top_left_index, top_left_center)),
+                Some((top_right_index, top_right_center)),
+                barycentric,
                 "",
             ),
             // only top right and bottom right - center left
             (
                 None,
                 None,
-                Some((bottom_right_index, bottom_right_distance)),
-                Some((top_right_index, top_right_distance)),
-            ) => Self::selector_of_two(
-                Some((bottom_right_index, bottom_right_distance)),
-                Some((top_right_index, top_right_distance)),
+                Some((bottom_right_index, bottom_right_center)),
+                Some((top_right_index, top_right_center)),
+            ) => Self::selector_of_two_y(
+                Some((top_right_index, top_right_center)),
+                Some((bottom_right_index, bottom_right_center)),
+                barycentric,
                 "",
             ),
             // only top left and bottom left - center right
             (
-                Some((bottom_left_index, bottom_left_distance)),
-                Some((top_left_index, top_left_distance)),
+                Some((bottom_left_index, bottom_left_center)),
+                Some((top_left_index, top_left_center)),
                 None,
                 None,
-            ) => Self::selector_of_two(
-                Some((bottom_left_index, bottom_left_distance)),
-                Some((top_left_index, top_left_distance)),
+            ) => Self::selector_of_two_y(
+                Some((top_left_index, top_left_center)),
+                Some((bottom_left_index, bottom_left_center)),
+                barycentric,
                 "",
             ),
             // only bottom right - left top corner
-            (None, None, Some((index, _)), None) => Ok((vec4(index, -1, -1, -1), vec4(1.0, 0.0, 0.0, 0.0))),
+            (None, None, Some((index, _)), None) => Ok((vec4(index, -1, -1, -1), vec2(0.0, 0.0))),
             // only top right - left bottom corner
-            (None, None, None, Some((index, _))) => Ok((vec4(index, -1, -1, -1), vec4(1.0, 0.0, 0.0, 0.0))),
+            (None, None, None, Some((index, _))) => Ok((vec4(index, -1, -1, -1), vec2(0.0, 0.0))),
             // only bottom left - right top corner
-            (Some((index, _)), None, None, None) => Ok((vec4(index, -1, -1, -1), vec4(1.0, 0.0, 0.0, 0.0))),
+            (Some((index, _)), None, None, None) => Ok((vec4(index, -1, -1, -1), vec2(0.0, 0.0))),
             // only top left - right bottom corner
-            (None, Some((index, _)), None, None) => Ok((vec4(index, -1, -1, -1), vec4(1.0, 0.0, 0.0, 0.0))),
-            _ => create_error!(format!("no fitting constellation found: \n\tbottom_left: {:?}, \n\ttop_left: {:?}, \n\tbottom_right: {:?}, \n\ttop_right: {:?}", bottom_left, top_left, bottom_right, top_right))
+            (None, Some((index, _)), None, None) => Ok((vec4(index, -1, -1, -1), vec2(0.0, 0.0))),
+            _ => create_error!(format!(
+                "no fitting constellation found: \n\tbottom_left: {:?}, \n\ttop_left: {:?}, \n\tbottom_right: {:?}, \n\ttop_right: {:?}",
+                bottom_left, top_left, bottom_right, top_right
+            ))
         }
     }
 }

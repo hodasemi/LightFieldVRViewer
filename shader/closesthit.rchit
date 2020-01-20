@@ -13,7 +13,9 @@ struct PlaneInfo {
     vec4 normal;
 
     ivec4 indices;
-    vec4 weights;
+    vec2 bary;
+
+    int padding[2];
 };
 
 layout(set = 0, binding = 1) readonly buffer PlaneInfos {
@@ -102,23 +104,48 @@ void set_pay_load(vec4 color) {
     pay_load.distance = gl_HitTNV;
 }
 
-void interpolate_images(PlaneInfo plane, vec2 hit_bary) {
-    if (plane.indices[0] == -1) {
-        return;
-    }
+vec4 linear(
+    float factor,
+    vec4 first_color,
+    vec4 second_color
+) {
+    return factor * first_color + (1.0 - factor) * second_color;
+}
 
+vec4 bilinear(
+    vec2 bary,
+    vec4 top_left_color,
+    vec4 top_right_color,
+    vec4 bottom_left_color,
+    vec4 bottom_right_color
+) {
+    // vec4 left = top_left.y * top_left_color + bottom_left.y * bottom_left_color;
+
+    vec4 left = linear(bary.y, top_left_color, bottom_left_color);
+    vec4 right = linear(bary.y, top_right_color, bottom_right_color);
+
+    return linear(bary.x, left, right);
+}
+
+void interpolate_images(PlaneInfo plane, vec2 hit_bary) {
     vec4 color = vec4(0.0);
 
-    for (int i = 0; i < 4; i++) {
-        if (plane.indices[i] == -1) {
-            break;
-        }
+    if (plane.indices[0] == -1) {
+        return;
+    } else if (plane.indices[1] == -1) {
+        color = single_image(plane.indices[0], hit_bary);
+    } else if (plane.indices[2] == -1) {
+        vec4 first = single_image(plane.indices[0], hit_bary);
+        vec4 second = single_image(plane.indices[1], hit_bary);
 
-        // PlaneImageInfo info = plane_infos.image_infos[plane.indices[i]];
+        color = linear(plane.bary.x, first, second);
+    } else {
+        vec4 first = single_image(plane.indices[0], hit_bary);
+        vec4 second = single_image(plane.indices[1], hit_bary);
+        vec4 third = single_image(plane.indices[2], hit_bary);
+        vec4 fourth = single_image(plane.indices[3], hit_bary);
 
-        // if (check_inside(info, hit_bary)) {
-            color += single_image(plane.indices[i], hit_bary) * plane.weights[i];
-        // }
+        color = bilinear(plane.bary, first, second, third, fourth);
     }
 
     set_pay_load(color);

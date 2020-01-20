@@ -165,7 +165,7 @@ pub struct LightFieldViewer {
 
     view_emulator: Mutex<ViewEmulator>,
 
-    last_time_stemp: Mutex<Duration>,
+    last_time_stamp: Mutex<Duration>,
     fps_count: AtomicU32,
 
     interpolation: CPUInterpolation,
@@ -273,7 +273,7 @@ impl LightFieldViewer {
 
             view_emulator: Mutex::new(ViewEmulator::new(context, turn_speed, movement_speed)),
 
-            last_time_stemp: Mutex::new(context.time()),
+            last_time_stamp: Mutex::new(context.time()),
             fps_count: AtomicU32::new(0),
 
             interpolation,
@@ -312,13 +312,13 @@ impl ContextObject for LightFieldViewer {
 
 impl TScene for LightFieldViewer {
     fn update(&self) -> VerboseResult<()> {
-        let current_time_stemp = self.context.time();
+        let current_time_stamp = self.context.time();
         self.fps_count.fetch_add(1, SeqCst);
 
-        let last_time_stemp = *self.last_time_stemp.lock()?;
+        let last_time_stamp = *self.last_time_stamp.lock()?;
 
-        if (current_time_stemp - last_time_stemp) >= Duration::from_secs_f32(1.0) {
-            *self.last_time_stemp.lock()? = last_time_stemp + Duration::from_secs_f32(1.0);
+        if (current_time_stamp - last_time_stamp) >= Duration::from_secs_f32(1.0) {
+            *self.last_time_stamp.lock()? = last_time_stamp + Duration::from_secs_f32(1.0);
 
             println!("fps: {}", self.fps_count.load(SeqCst));
             self.fps_count.store(0, SeqCst);
@@ -756,7 +756,9 @@ impl LightFieldViewer {
                     normal: plane_normal.extend(0.0),
 
                     indices: vec4(-1, -1, -1, -1),
-                    weights: vec4(0.0, 0.0, 0.0, 0.0),
+                    bary: vec2(0.0, 0.0),
+
+                    padding: [0; 2],
                 };
 
                 plane_infos.push(plane_info.clone());
@@ -893,7 +895,9 @@ pub struct PlaneInfo {
     pub normal: Vector4<f32>,
 
     pub indices: Vector4<i32>,
-    pub weights: Vector4<f32>,
+    pub bary: Vector2<f32>,
+
+    padding: [i32; 2],
 }
 
 #[derive(Debug, Clone)]
