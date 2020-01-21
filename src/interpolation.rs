@@ -4,294 +4,308 @@ use context::prelude::*;
 use super::light_field::light_field_data::LightFieldFrustum;
 use super::light_field_viewer::{PlaneImageInfo, PlaneInfo};
 
-use ordered_float::OrderedFloat;
-use std::collections::BinaryHeap;
 use std::f32;
 use std::ops::IndexMut;
+use std::sync::{Arc, Mutex};
 
-#[derive(Eq, Debug)]
-struct IndexedFloat {
-    index: u32,
-    value: OrderedFloat<f32>,
+struct LightField {
+    frustum: LightFieldFrustum,
+
+    planes: Vec<Plane>,
 }
 
-impl IndexedFloat {
-    fn new(index: u32, value: f32) -> Self {
-        IndexedFloat {
-            index,
-            value: OrderedFloat(value),
+impl LightField {
+    pub fn new(
+        queue: &Arc<Mutex<Queue>>,
+        command_buffer: &Arc<CommandBuffer>,
+        data: impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
+        frustum: LightFieldFrustum,
+    ) -> VerboseResult<Self> {
+        let mut planes = Vec::new();
+
+        for (plane_info, vertices, image_infos) in data.into_iter() {
+            planes.push(Plane::new(
+                queue,
+                command_buffer,
+                plane_info,
+                image_infos,
+                vertices,
+            )?);
         }
-    }
 
-    fn index(&self) -> usize {
-        self.index as usize
-    }
-
-    fn value(&self) -> f32 {
-        self.value.0
-    }
-}
-
-impl Ord for IndexedFloat {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.value.cmp(&other.value)
-    }
-}
-
-impl PartialOrd for IndexedFloat {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for IndexedFloat {
-    fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
+        Ok(LightField { frustum, planes })
     }
 }
 
 struct Plane {
-    top_left: Vector3<f32>,
-    top_right: Vector3<f32>,
-    bottom_left: Vector3<f32>,
-    _bottom_right: Vector3<f32>,
-
-    normal: Vector3<f32>,
-
+    info: PlaneInfo,
     image_infos: Vec<PlaneImageInfo>,
-
-    frustum: LightFieldFrustum,
+    vertex_buffer: Arc<Buffer<Vector3<f32>>>,
 }
 
 impl Plane {
     fn new(
+        queue: &Arc<Mutex<Queue>>,
+        command_buffer: &Arc<CommandBuffer>,
         plane_info: PlaneInfo,
-        frustum: LightFieldFrustum,
         image_infos: Vec<PlaneImageInfo>,
-    ) -> Self {
-        Plane {
-            top_left: plane_info.top_left.truncate(),
-            top_right: plane_info.top_right.truncate(),
-            bottom_left: plane_info.bottom_left.truncate(),
-            _bottom_right: plane_info.bottom_right.truncate(),
+        vertices: [Vector3<f32>; 6],
+    ) -> VerboseResult<Self> {
+        let cpu_buffer = Buffer::builder()
+            .set_memory_properties(
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                    | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+                    | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+            )
+            .set_usage(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
+            .set_data(&vertices)
+            .build(command_buffer.device().clone())?;
 
-            normal: plane_info.normal.truncate(),
+        let gpu_buffer = Buffer::into_device_local(cpu_buffer, command_buffer, queue)?;
 
+        Ok(Plane {
+            info: plane_info,
             image_infos,
-
-            frustum,
-        }
+            vertex_buffer: gpu_buffer,
+        })
     }
 }
 
+pub enum InterpolationResult {
+    AccelerationStructures(Arc<AccelerationStructure>, Arc<AccelerationStructure>),
+    NoChange,
+    Empty,
+}
+
 pub struct CPUInterpolation {
-    planes: Vec<Plane>,
+    light_fields: Vec<LightField>,
+
+    last_position: Mutex<Vector3<f32>>,
 }
 
 impl CPUInterpolation {
     pub fn new(
-        interpolation_infos: Vec<(PlaneInfo, LightFieldFrustum, Vec<PlaneImageInfo>)>,
-    ) -> Self {
-        let mut planes = Vec::with_capacity(interpolation_infos.len());
+        queue: &Arc<Mutex<Queue>>,
+        command_buffer: &Arc<CommandBuffer>,
+        interpolation_infos: Vec<(
+            impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
+            LightFieldFrustum,
+        )>,
+    ) -> VerboseResult<Self> {
+        let mut light_fields = Vec::with_capacity(interpolation_infos.len());
 
-        for (plane_info, frustum, image_infos) in interpolation_infos.iter() {
-            planes.push(Plane::new(
-                plane_info.clone(),
-                frustum.clone(),
-                image_infos.clone(),
-            ));
+        for (data, frustum) in interpolation_infos.into_iter() {
+            light_fields.push(LightField::new(queue, command_buffer, data, frustum)?);
         }
 
-        CPUInterpolation { planes }
+        Ok(CPUInterpolation {
+            light_fields,
+            last_position: Mutex::new(Vector3::new(f32::MAX, f32::MAX, f32::MAX)),
+        })
     }
 
     pub fn calculate_interpolation(
         &self,
+        command_buffer: &Arc<CommandBuffer>,
         context: &Context,
         inv_view: Matrix4<f32>,
-        mut selector: impl IndexMut<usize, Output = PlaneInfo>,
-    ) -> VerboseResult<()> {
+        mut plane_infos: impl IndexMut<usize, Output = PlaneInfo>,
+    ) -> VerboseResult<InterpolationResult> {
         let my_position = (inv_view * vec4(0.0, 0.0, 0.0, 1.0)).truncate();
+        let mut last_position = self.last_position.lock()?;
 
-        let mut found_one = false;
+        if *last_position == my_position {
+            return Ok(InterpolationResult::NoChange);
+        }
 
-        for (i, plane) in self.planes.iter().enumerate() {
-            if let Some(viewer_point) =
-                Self::plane_line_intersection(&plane, my_position, -plane.normal)
-            {
-                let viewer_barycentric = Self::calculate_barycentrics(&plane, viewer_point);
+        *last_position = my_position;
 
-                let viewer_is_inside = plane.frustum.check(viewer_point);
+        let mut blas_builder = AccelerationStructure::bottom_level()
+            .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
 
-                if viewer_is_inside {
-                    // selector[i].indices = vec4(-1, -1, -1, -1);
-                    // selector[i].weights = vec4(0.0, 0.0, 0.0, 0.0);
+        let mut i = 0;
 
-                    found_one = true;
+        for light_field in self.light_fields.iter() {
+            let viewer_is_inside = light_field.frustum.check(my_position);
 
-                    // continue;
-                }
+            if !viewer_is_inside {
+                // continue;
+            }
 
-                /*
-                                    |                   |
-                    Above, Left Side    |       Above       |   Above, Right Side
+            for plane in light_field.planes.iter() {
+                if let Some(viewer_point) = Self::plane_line_intersection(
+                    &plane,
+                    my_position,
+                    -plane.info.normal.truncate(),
+                ) {
+                    let viewer_barycentric = Self::calculate_barycentrics(&plane, viewer_point);
+
+                    /*
                                         |                   |
-                ------------------------X-------------------------------------------
-                                        |///////////////////|
-                        Left Side       |////// Plane //////|       Right Side
-                                        |///////////////////|
-                --------------------------------------------------------------------
-                                        |                   |
-                    Below, Left Side    |       Below       |   Below, Right Side
-                                        |                   |
+                        Above, Left Side    |       Above       |   Above, Right Side
+                                            |                   |
+                    ------------------------X-------------------------------------------
+                                            |///////////////////|
+                            Left Side       |////// Plane //////|       Right Side
+                                            |///////////////////|
+                    --------------------------------------------------------------------
+                                            |                   |
+                        Below, Left Side    |       Below       |   Below, Right Side
+                                            |                   |
 
-                X - is our reference point
-                */
+                    X - is our reference point
+                    */
 
-                // if viewer_barycentric.x <= 1.0
-                //     && viewer_barycentric.x >= 0.0
-                //     && viewer_barycentric.y <= 1.0
-                //     && viewer_barycentric.y >= 0.0
-                // {
-                //     // We hit the plane
-                //     selector[i] = Self::selector_of_four(
-                //         self.find_closest_top_left(plane, viewer_barycentric),
-                //         self.find_closest_bottom_left(plane, viewer_barycentric),
-                //         self.find_closest_top_right(plane, viewer_barycentric),
-                //         self.find_closest_bottom_right(plane, viewer_barycentric),
-                //     )?;
-                // } else {
-                //     selector[i] = InfoSelector::default();
-                // }
+                    // if viewer_barycentric.x <= 1.0
+                    //     && viewer_barycentric.x >= 0.0
+                    //     && viewer_barycentric.y <= 1.0
+                    //     && viewer_barycentric.y >= 0.0
+                    // {
+                    //     // We hit the plane
+                    //     selector[i] = Self::selector_of_four(
+                    //         self.find_closest_top_left(plane, viewer_barycentric),
+                    //         self.find_closest_bottom_left(plane, viewer_barycentric),
+                    //         self.find_closest_top_right(plane, viewer_barycentric),
+                    //         self.find_closest_bottom_right(plane, viewer_barycentric),
+                    //     )?;
+                    // } else {
+                    //     selector[i] = InfoSelector::default();
+                    // }
 
-                if viewer_barycentric.y < 0.0 {
-                    // check horizontal axis
-                    if viewer_barycentric.x < 0.0 {
-                        // Above, Left Side
-                        let (indices, bary) = Self::selector_of_one(
-                            self.find_closest_bottom_right(plane, vec2(0.0001, 0.0001)),
-                            "bottom right",
-                        )?;
-
-                        selector[i].indices = indices;
-                        selector[i].bary = bary;
-                    } else if viewer_barycentric.x > 1.0 {
-                        // Above, Right Side
-                        let (indices, bary) = Self::selector_of_one(
-                            self.find_closest_bottom_left(plane, vec2(0.9999, 0.0001)),
-                            "bottom left",
-                        )?;
-
-                        selector[i].indices = indices;
-                        selector[i].bary = bary;
-                    } else {
-                        // Above Center
-                        let (indices, bary) = Self::selector_of_two_x(
-                            self.find_closest_bottom_left(
-                                plane,
+                    let (indices, bary) = if viewer_barycentric.y < 0.0 {
+                        // check horizontal axis
+                        if viewer_barycentric.x < 0.0 {
+                            // Above, Left Side
+                            Self::selector_of_one(
+                                self.find_closest_bottom_right(plane, vec2(0.0001, 0.0001)),
+                                "bottom right",
+                            )?
+                        } else if viewer_barycentric.x > 1.0 {
+                            // Above, Right Side
+                            Self::selector_of_one(
+                                self.find_closest_bottom_left(plane, vec2(0.9999, 0.0001)),
+                                "bottom left",
+                            )?
+                        } else {
+                            // Above Center
+                            Self::selector_of_two_x(
+                                self.find_closest_bottom_left(
+                                    plane,
+                                    vec2(viewer_barycentric.x, 0.0001),
+                                ),
+                                self.find_closest_bottom_right(
+                                    plane,
+                                    vec2(viewer_barycentric.x, 0.0001),
+                                ),
                                 vec2(viewer_barycentric.x, 0.0001),
-                            ),
-                            self.find_closest_bottom_right(
-                                plane,
-                                vec2(viewer_barycentric.x, 0.0001),
-                            ),
-                            vec2(viewer_barycentric.x, 0.0001),
-                            "bottom left and bottom right",
-                        )?;
-
-                        selector[i].indices = indices;
-                        selector[i].bary = bary;
+                                "bottom left and bottom right",
+                            )?
+                        }
                     }
-                }
-                // check for below
-                else if viewer_barycentric.y > 1.0 {
-                    // check horizontal axis
-                    if viewer_barycentric.x < 0.0 {
-                        // Below, Left Side
-                        let (indices, bary) = Self::selector_of_one(
-                            self.find_closest_top_right(plane, vec2(0.0001, 0.9999)),
-                            "top right",
-                        )?;
-
-                        selector[i].indices = indices;
-                        selector[i].bary = bary;
-                    } else if viewer_barycentric.x > 1.0 {
-                        // Below, Right Side
-                        let (indices, bary) = Self::selector_of_one(
-                            self.find_closest_top_left(plane, vec2(0.9999, 0.9999)),
-                            "top left",
-                        )?;
-
-                        selector[i].indices = indices;
-                        selector[i].bary = bary;
-                    } else {
-                        // Below Center
-                        let (indices, bary) = Self::selector_of_two_x(
-                            self.find_closest_top_left(plane, vec2(viewer_barycentric.x, 0.9999)),
-                            self.find_closest_top_right(plane, vec2(viewer_barycentric.x, 0.9999)),
-                            vec2(viewer_barycentric.x, 0.9999),
-                            "top right and top left",
-                        )?;
-
-                        selector[i].indices = indices;
-                        selector[i].bary = bary;
+                    // check for below
+                    else if viewer_barycentric.y > 1.0 {
+                        // check horizontal axis
+                        if viewer_barycentric.x < 0.0 {
+                            // Below, Left Side
+                            Self::selector_of_one(
+                                self.find_closest_top_right(plane, vec2(0.0001, 0.9999)),
+                                "top right",
+                            )?
+                        } else if viewer_barycentric.x > 1.0 {
+                            // Below, Right Side
+                            Self::selector_of_one(
+                                self.find_closest_top_left(plane, vec2(0.9999, 0.9999)),
+                                "top left",
+                            )?
+                        } else {
+                            // Below Center
+                            Self::selector_of_two_x(
+                                self.find_closest_top_left(
+                                    plane,
+                                    vec2(viewer_barycentric.x, 0.9999),
+                                ),
+                                self.find_closest_top_right(
+                                    plane,
+                                    vec2(viewer_barycentric.x, 0.9999),
+                                ),
+                                vec2(viewer_barycentric.x, 0.9999),
+                                "top right and top left",
+                            )?
+                        }
                     }
-                }
-                // we are in the center, vertically
-                else {
-                    // check horizontal axis
-                    if viewer_barycentric.x < 0.0 {
-                        // Left Side
-                        let (indices, bary) = Self::selector_of_two_y(
-                            self.find_closest_top_right(plane, vec2(0.0001, viewer_barycentric.y)),
-                            self.find_closest_bottom_right(
-                                plane,
+                    // we are in the center, vertically
+                    else {
+                        // check horizontal axis
+                        if viewer_barycentric.x < 0.0 {
+                            // Left Side
+                            Self::selector_of_two_y(
+                                self.find_closest_top_right(
+                                    plane,
+                                    vec2(0.0001, viewer_barycentric.y),
+                                ),
+                                self.find_closest_bottom_right(
+                                    plane,
+                                    vec2(0.0001, viewer_barycentric.y),
+                                ),
                                 vec2(0.0001, viewer_barycentric.y),
-                            ),
-                            vec2(0.0001, viewer_barycentric.y),
-                            "bottom right and top right",
-                        )?;
-
-                        selector[i].indices = indices;
-                        selector[i].bary = bary;
-                    } else if viewer_barycentric.x > 1.0 {
-                        // Right Side
-                        let (indices, bary) = Self::selector_of_two_y(
-                            self.find_closest_top_left(plane, vec2(0.9999, viewer_barycentric.y)),
-                            self.find_closest_bottom_left(
-                                plane,
+                                "bottom right and top right",
+                            )?
+                        } else if viewer_barycentric.x > 1.0 {
+                            // Right Side
+                            Self::selector_of_two_y(
+                                self.find_closest_top_left(
+                                    plane,
+                                    vec2(0.9999, viewer_barycentric.y),
+                                ),
+                                self.find_closest_bottom_left(
+                                    plane,
+                                    vec2(0.9999, viewer_barycentric.y),
+                                ),
                                 vec2(0.9999, viewer_barycentric.y),
-                            ),
-                            vec2(0.9999, viewer_barycentric.y),
-                            "bottom left and top left",
-                        )?;
+                                "bottom left and top left",
+                            )?
+                        } else {
+                            // We hit the plane
+                            Self::selector_of_four(
+                                self.find_closest_top_left(plane, viewer_barycentric),
+                                self.find_closest_bottom_left(plane, viewer_barycentric),
+                                self.find_closest_top_right(plane, viewer_barycentric),
+                                self.find_closest_bottom_right(plane, viewer_barycentric),
+                                viewer_barycentric,
+                            )?
+                        }
+                    };
 
-                        selector[i].indices = indices;
-                        selector[i].bary = bary;
-                    } else {
-                        // We hit the plane
-                        let (indices, bary) = Self::selector_of_four(
-                            self.find_closest_top_left(plane, viewer_barycentric),
-                            self.find_closest_bottom_left(plane, viewer_barycentric),
-                            self.find_closest_top_right(plane, viewer_barycentric),
-                            self.find_closest_bottom_right(plane, viewer_barycentric),
-                            viewer_barycentric,
-                        )?;
+                    let mut info = plane.info.clone();
 
-                        selector[i].indices = indices;
-                        selector[i].bary = bary;
-                    }
+                    info.indices = indices;
+                    info.bary = bary;
+
+                    plane_infos[i] = info;
+
+                    blas_builder = blas_builder.add_vertices(&plane.vertex_buffer, None);
+
+                    i += 1;
                 }
             }
         }
 
-        if !found_one {
-            // context
-            //     .render_core()
-            //     .set_clear_color([1.0, 0.2, 0.2, 1.0])?;
+        // return if haven't added any geometry to the blas
+        if i == 0 {
+            return Ok(InterpolationResult::Empty);
         }
 
-        Ok(())
+        let blas = blas_builder.build(context.device().clone())?;
+
+        let tlas = AccelerationStructure::top_level()
+            .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
+            .add_instance(&blas, None, 0)
+            .build(context.device().clone())?;
+
+        blas.generate(command_buffer)?;
+        tlas.generate(command_buffer)?;
+
+        Ok(InterpolationResult::AccelerationStructures(blas, tlas))
     }
 
     /// https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection#Algebraic_form
@@ -300,8 +314,8 @@ impl CPUInterpolation {
         origin: Vector3<f32>,
         direction: Vector3<f32>,
     ) -> Option<Vector3<f32>> {
-        let numerator = (plane.top_left - origin).dot(plane.normal);
-        let denominator = plane.normal.dot(direction);
+        let numerator = (plane.info.top_left.truncate() - origin).dot(plane.info.normal.truncate());
+        let denominator = plane.info.normal.truncate().dot(direction);
 
         if denominator == 0.0 {
             // println!("plane and line are parallel");
@@ -326,13 +340,13 @@ impl CPUInterpolation {
     }
 
     fn calculate_barycentrics(plane: &Plane, point: Vector3<f32>) -> Vector2<f32> {
-        let horizontal_direction = plane.top_right - plane.top_left;
-        let vertical_direction = plane.bottom_left - plane.top_left;
+        let horizontal_direction = plane.info.top_right.truncate() - plane.info.top_left.truncate();
+        let vertical_direction = plane.info.bottom_left.truncate() - plane.info.top_left.truncate();
 
-        let x = Self::distance_to_line(plane.top_left, vertical_direction, point)
+        let x = Self::distance_to_line(plane.info.top_left.truncate(), vertical_direction, point)
             / horizontal_direction.magnitude();
 
-        let y = Self::distance_to_line(plane.top_left, horizontal_direction, point)
+        let y = Self::distance_to_line(plane.info.top_left.truncate(), horizontal_direction, point)
             / vertical_direction.magnitude();
 
         vec2(x, y)

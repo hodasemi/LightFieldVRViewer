@@ -10,7 +10,7 @@ use std::time::Duration;
 use cgmath::{vec2, vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
 
 use super::{
-    interpolation::CPUInterpolation,
+    interpolation::{CPUInterpolation, InterpolationResult},
     light_field::{light_field_data::PlaneImageRatios, LightField},
     rasterizer::{Rasterizer, TexturedVertex},
     view_emulator::ViewEmulator,
@@ -157,10 +157,9 @@ pub struct LightFieldViewer {
     sbt: ShaderBindingTable,
 
     // scene data
-    _blas: Arc<AccelerationStructure>,
-    _tlas: Arc<AccelerationStructure>,
+    acceleration_structures:
+        Mutex<Option<TargetMode<Option<(Arc<AccelerationStructure>, Arc<AccelerationStructure>)>>>>,
     _images: Vec<Arc<Image>>,
-    _vertex_buffer: Arc<Buffer<Vector3<f32>>>,
     plane_buffer: TargetMode<Arc<Buffer<PlaneInfo>>>,
 
     view_emulator: Mutex<ViewEmulator>,
@@ -181,8 +180,7 @@ impl LightFieldViewer {
     ) -> VerboseResult<Arc<Self>> {
         let feet_renderer = FeetRenderer::new(context, &light_fields)?;
 
-        let (blas, tlas, vertex_buffer, plane_buffer, images, interpolation) =
-            Self::create_scene_data(context, light_fields)?;
+        let (plane_buffer, images, interpolation) = Self::create_scene_data(context, light_fields)?;
 
         let view_buffers = Self::create_view_buffers(context)?;
 
@@ -195,7 +193,7 @@ impl LightFieldViewer {
 
         let device = context.device();
 
-        let as_descriptor = Self::create_as_descriptor(device, &tlas, &plane_buffer, &images)?;
+        let as_descriptor = Self::create_as_descriptor(device, &plane_buffer, &images)?;
 
         let as_desc = match &as_descriptor {
             TargetMode::Single(desc) => desc,
@@ -252,7 +250,7 @@ impl LightFieldViewer {
 
         context
             .render_core()
-            .set_clear_color([1.0, 0.2, 0.2, 1.0])?;
+            .set_clear_color([0.2, 0.2, 0.2, 1.0])?;
 
         Ok(Arc::new(LightFieldViewer {
             context: context.clone(),
@@ -265,10 +263,8 @@ impl LightFieldViewer {
             ray_tracing_pipeline: pipeline,
             sbt,
 
-            _blas: blas,
-            _tlas: tlas,
+            acceleration_structures: Mutex::new(None),
             _images: images,
-            _vertex_buffer: vertex_buffer,
             plane_buffer,
 
             view_emulator: Mutex::new(ViewEmulator::new(context, turn_speed, movement_speed)),
@@ -324,23 +320,15 @@ impl TScene for LightFieldViewer {
             self.fps_count.store(0, SeqCst);
         }
 
-        match (&self.view_buffers, &self.plane_buffer) {
-            (TargetMode::Single(view_buffer), TargetMode::Single(plane_buffer)) => {
+        match &self.view_buffers {
+            TargetMode::Single(view_buffer) => {
                 let inverted_transform =
                     self.view_emulator.lock()?.simulation_transform().invert()?;
 
                 Self::update_view_buffer(view_buffer, inverted_transform)?;
-                Self::update_plane_buffer(
-                    &self.context,
-                    plane_buffer,
-                    inverted_transform.view,
-                    &self.interpolation,
-                )?;
             }
-            (
-                TargetMode::Stereo(left_view_buffer, right_view_buffer),
-                TargetMode::Stereo(left_plane_buffer, right_plane_buffer),
-            ) => {
+
+            TargetMode::Stereo(left_view_buffer, right_view_buffer) => {
                 let (left_transform, right_transform) = self
                     .context
                     .render_core()
@@ -349,23 +337,10 @@ impl TScene for LightFieldViewer {
 
                 let left_inverted_transform = left_transform.invert()?;
                 Self::update_view_buffer(left_view_buffer, left_inverted_transform)?;
-                Self::update_plane_buffer(
-                    &self.context,
-                    left_plane_buffer,
-                    left_inverted_transform.view,
-                    &self.interpolation,
-                )?;
 
                 let right_inverted_transform = right_transform.invert()?;
                 Self::update_view_buffer(right_view_buffer, right_inverted_transform)?;
-                Self::update_plane_buffer(
-                    &self.context,
-                    right_plane_buffer,
-                    right_inverted_transform.view,
-                    &self.interpolation,
-                )?;
             }
-            _ => create_error!("wrong setup"),
         }
 
         Ok(())
@@ -390,6 +365,7 @@ impl TScene for LightFieldViewer {
             &self.context.render_core().images()?,
             rasterizer.pipelines(),
             rasterizer.render_targets(),
+            &self.plane_buffer,
         ) {
             (
                 TargetMode::Single(index),
@@ -399,23 +375,56 @@ impl TScene for LightFieldViewer {
                 TargetMode::Single(target_images),
                 TargetMode::Single(feet_pipeline),
                 TargetMode::Single(feet_render_target),
+                TargetMode::Single(plane_buffer),
             ) => {
+                let transform = self.view_emulator.lock()?.simulation_transform();
+
                 self.feet.render(
                     command_buffer,
                     feet_pipeline,
                     feet_render_target,
                     *index,
-                    self.view_emulator.lock()?.simulation_transform(),
+                    transform,
                 )?;
 
-                self.render(
-                    *index,
+                match Self::update_plane_buffer(
                     command_buffer,
-                    example_descriptor,
-                    as_descriptor,
-                    target_images,
-                    image_descriptor,
-                )?;
+                    &self.context,
+                    plane_buffer,
+                    transform
+                        .view
+                        .invert()
+                        .ok_or("failed inverting simulation view")?,
+                    &self.interpolation,
+                )? {
+                    InterpolationResult::AccelerationStructures(blas, tlas) => {
+                        as_descriptor
+                            .update(&[DescriptorWrite::acceleration_structures(0, &[&tlas])]);
+
+                        *self.acceleration_structures.lock()? =
+                            Some(TargetMode::Single(Some((blas, tlas))));
+
+                        self.render(
+                            *index,
+                            command_buffer,
+                            example_descriptor,
+                            as_descriptor,
+                            target_images,
+                            image_descriptor,
+                        )?;
+                    }
+                    InterpolationResult::NoChange => {
+                        self.render(
+                            *index,
+                            command_buffer,
+                            example_descriptor,
+                            as_descriptor,
+                            target_images,
+                            image_descriptor,
+                        )?;
+                    }
+                    InterpolationResult::Empty => (),
+                }
             }
             (
                 TargetMode::Stereo(left_index, right_index),
@@ -425,6 +434,7 @@ impl TScene for LightFieldViewer {
                 TargetMode::Stereo(left_image, right_image),
                 TargetMode::Stereo(left_feet_pipeline, right_feet_pipeline),
                 TargetMode::Stereo(left_feet_render_target, right_feet_render_target),
+                TargetMode::Stereo(left_plane_buffer, right_plane_buffer),
             ) => {
                 let (left_transform, right_transform) = self
                     .context
@@ -432,6 +442,7 @@ impl TScene for LightFieldViewer {
                     .transformations()?
                     .ok_or("expected vr transformations")?;
 
+                // render feet
                 self.feet.render(
                     command_buffer,
                     left_feet_pipeline,
@@ -448,23 +459,81 @@ impl TScene for LightFieldViewer {
                     right_transform,
                 )?;
 
-                self.render(
-                    *left_index,
+                match Self::update_plane_buffer(
                     command_buffer,
-                    left_descriptor,
-                    left_as_descriptor,
-                    left_image,
-                    left_image_descriptor,
-                )?;
+                    &self.context,
+                    left_plane_buffer,
+                    left_transform
+                        .view
+                        .invert()
+                        .ok_or("failed inverting left view")?,
+                    &self.interpolation,
+                )? {
+                    InterpolationResult::AccelerationStructures(left_blas, left_tlas) => {
+                        left_as_descriptor
+                            .update(&[DescriptorWrite::acceleration_structures(0, &[&left_tlas])]);
 
-                self.render(
-                    *right_index,
+                        self.update_left_as(left_blas, left_tlas)?;
+
+                        self.render(
+                            *left_index,
+                            command_buffer,
+                            left_descriptor,
+                            left_as_descriptor,
+                            left_image,
+                            left_image_descriptor,
+                        )?;
+                    }
+                    InterpolationResult::NoChange => {
+                        self.render(
+                            *left_index,
+                            command_buffer,
+                            left_descriptor,
+                            left_as_descriptor,
+                            left_image,
+                            left_image_descriptor,
+                        )?;
+                    }
+                    InterpolationResult::Empty => (),
+                }
+
+                match Self::update_plane_buffer(
                     command_buffer,
-                    right_descriptor,
-                    right_as_descriptor,
-                    right_image,
-                    right_image_descriptor,
-                )?;
+                    &self.context,
+                    right_plane_buffer,
+                    right_transform
+                        .view
+                        .invert()
+                        .ok_or("failed inverting right view")?,
+                    &self.interpolation,
+                )? {
+                    InterpolationResult::AccelerationStructures(right_blas, right_tlas) => {
+                        right_as_descriptor
+                            .update(&[DescriptorWrite::acceleration_structures(0, &[&right_tlas])]);
+
+                        self.update_right_as(right_blas, right_tlas)?;
+
+                        self.render(
+                            *right_index,
+                            command_buffer,
+                            right_descriptor,
+                            right_as_descriptor,
+                            right_image,
+                            right_image_descriptor,
+                        )?;
+                    }
+                    InterpolationResult::NoChange => {
+                        self.render(
+                            *right_index,
+                            command_buffer,
+                            right_descriptor,
+                            right_as_descriptor,
+                            right_image,
+                            right_image_descriptor,
+                        )?;
+                    }
+                    InterpolationResult::Empty => (),
+                }
             }
             _ => create_error!("invalid target mode setup"),
         }
@@ -560,7 +629,6 @@ impl LightFieldViewer {
 
     fn create_as_descriptor(
         device: &Arc<Device>,
-        tlas: &Arc<AccelerationStructure>,
         plane_buffer: &TargetMode<Arc<Buffer<PlaneInfo>>>,
         images: &Vec<Arc<Image>>,
     ) -> VerboseResult<TargetMode<Arc<DescriptorSet>>> {
@@ -597,7 +665,6 @@ impl LightFieldViewer {
                 let descriptor_set = DescriptorPool::prepare_set(&descriptor_pool).allocate()?;
 
                 descriptor_set.update(&[
-                    DescriptorWrite::acceleration_structures(0, &[tlas]),
                     DescriptorWrite::storage_buffers(1, &[plane_buffer]),
                     DescriptorWrite::combined_samplers(2, &image_refs),
                 ]);
@@ -612,7 +679,6 @@ impl LightFieldViewer {
                 let left_desc_set = DescriptorPool::prepare_set(&left_desc_pool).allocate()?;
 
                 left_desc_set.update(&[
-                    DescriptorWrite::acceleration_structures(0, &[tlas]),
                     DescriptorWrite::storage_buffers(1, &[left_plane_buffer]),
                     DescriptorWrite::combined_samplers(2, &image_refs),
                 ]);
@@ -624,7 +690,6 @@ impl LightFieldViewer {
                 let right_desc_set = DescriptorPool::prepare_set(&right_desc_pool).allocate()?;
 
                 right_desc_set.update(&[
-                    DescriptorWrite::acceleration_structures(0, &[tlas]),
                     DescriptorWrite::storage_buffers(1, &[right_plane_buffer]),
                     DescriptorWrite::combined_samplers(2, &image_refs),
                 ]);
@@ -693,41 +758,89 @@ impl LightFieldViewer {
     }
 
     fn update_plane_buffer(
+        command_buffer: &Arc<CommandBuffer>,
         context: &Arc<Context>,
         plane_buffer: &Arc<Buffer<PlaneInfo>>,
         inverted_view: Matrix4<f32>,
         interpolation: &CPUInterpolation,
-    ) -> VerboseResult<()> {
+    ) -> VerboseResult<InterpolationResult> {
         interpolation.calculate_interpolation(
+            command_buffer,
             context,
             inverted_view,
             plane_buffer.map_complete()?,
-        )?;
+        )
+    }
+
+    fn update_left_as(
+        &self,
+        blas: Arc<AccelerationStructure>,
+        tlas: Arc<AccelerationStructure>,
+    ) -> VerboseResult<()> {
+        let mut acceleration_structures = self.acceleration_structures.lock()?;
+
+        match acceleration_structures.as_mut() {
+            Some(acceleration_structures) => {
+                let (left, _) = acceleration_structures.stereo_mut()?;
+
+                *left = Some((blas, tlas));
+            }
+            None => {
+                *acceleration_structures = Some(TargetMode::Stereo(None, Some((blas, tlas))));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn update_right_as(
+        &self,
+        blas: Arc<AccelerationStructure>,
+        tlas: Arc<AccelerationStructure>,
+    ) -> VerboseResult<()> {
+        let mut acceleration_structures = self.acceleration_structures.lock()?;
+
+        match acceleration_structures.as_mut() {
+            Some(acceleration_structures) => {
+                let (_, right) = acceleration_structures.stereo_mut()?;
+
+                *right = Some((blas, tlas));
+            }
+            None => {
+                *acceleration_structures = Some(TargetMode::Stereo(None, Some((blas, tlas))));
+            }
+        }
 
         Ok(())
     }
 
     fn create_scene_data(
         context: &Arc<Context>,
-        mut light_fields: Vec<LightField>,
+        light_fields: Vec<LightField>,
     ) -> VerboseResult<(
-        Arc<AccelerationStructure>,
-        Arc<AccelerationStructure>,
-        Arc<Buffer<Vector3<f32>>>,
         TargetMode<Arc<Buffer<PlaneInfo>>>,
         Vec<Arc<Image>>,
         CPUInterpolation,
     )> {
-        let mut vertex_data = Vec::new();
-        let mut plane_infos = Vec::new();
-        let mut interpolation_infos = Vec::new();
+        let mut light_field_infos = Vec::with_capacity(light_fields.len());
+        // let mut vertex_data = Vec::new();
+        // let mut plane_infos = Vec::new();
+        // let mut interpolation_infos = Vec::new();
         let mut images = Vec::new();
 
-        while let Some(light_field) = light_fields.pop() {
-            let frustum = light_field.frustum();
-            let mut planes = light_field.into_data();
+        let mut max_planes = 0;
 
-            while let Some(mut plane) = planes.pop() {
+        // while let Some(light_field) = light_fields.pop() {
+        for light_field in light_fields.into_iter() {
+            let frustum = light_field.frustum();
+            let planes = light_field.into_data();
+
+            let mut inner_planes = Vec::with_capacity(planes.len());
+
+            // while let Some(mut plane) = planes.pop() {
+            for mut plane in planes.into_iter() {
+                max_planes += 1;
+
                 let mut image_infos = Vec::with_capacity(plane.content.len());
 
                 // add plane contents to buffers
@@ -761,43 +874,21 @@ impl LightFieldViewer {
                     padding: [0; 2],
                 };
 
-                plane_infos.push(plane_info.clone());
-                interpolation_infos.push((plane_info, frustum.clone(), image_infos));
-
                 // create vertex data
-                // v0
-                vertex_data.push(plane.left_bottom);
+                let vertices = [
+                    plane.left_bottom,
+                    plane.left_top,
+                    plane.right_bottom,
+                    plane.right_bottom,
+                    plane.left_top,
+                    plane.right_top,
+                ];
 
-                // v1
-                vertex_data.push(plane.left_top);
-
-                // v2
-                vertex_data.push(plane.right_bottom);
-
-                // v3
-                vertex_data.push(plane.right_bottom);
-
-                // v4
-                vertex_data.push(plane.left_top);
-
-                // v5
-                vertex_data.push(plane.right_top);
+                inner_planes.push((plane_info, vertices, image_infos));
             }
+
+            light_field_infos.push((inner_planes, frustum));
         }
-
-        let command_buffer = context.render_core().allocate_primary_buffer()?;
-
-        // --- create vertex buffer ---
-        let vertex_cpu_buffer = Buffer::builder()
-            .set_memory_properties(
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
-            )
-            .set_usage(VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
-            .set_data(&vertex_data)
-            .build(context.device().clone())?;
-
-        let vertex_gpu_buffer =
-            Buffer::into_device_local(vertex_cpu_buffer, &command_buffer, context.queue())?;
 
         // --- create plane info buffer ---
         let plane_buffer = match context.render_core().images()? {
@@ -809,7 +900,7 @@ impl LightFieldViewer {
                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                     )
                     .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-                    .set_data(&plane_infos)
+                    .set_size(max_planes)
                     .build(context.device().clone())?,
             ),
             TargetMode::Stereo(_, _) => TargetMode::Stereo(
@@ -820,7 +911,7 @@ impl LightFieldViewer {
                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                     )
                     .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-                    .set_data(&plane_infos)
+                    .set_size(max_planes)
                     .build(context.device().clone())?,
                 Buffer::builder()
                     .set_memory_properties(
@@ -829,59 +920,33 @@ impl LightFieldViewer {
                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                     )
                     .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-                    .set_data(&plane_infos)
+                    .set_size(max_planes)
                     .build(context.device().clone())?,
             ),
         };
 
-        Buffer::builder()
-            .set_memory_properties(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-            .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-            .set_data(&plane_infos)
-            .build(context.device().clone())?;
+        let command_buffer = context.render_core().allocate_primary_buffer()?;
 
-        // --- create acceleration structures ---
-        let blas = AccelerationStructure::bottom_level()
-            .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
-            .add_vertices(&vertex_gpu_buffer, None)
-            .build(context.device().clone())?;
+        // command_buffer.begin(VkCommandBufferBeginInfo::new(
+        //     VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        // ))?;
 
-        let tlas = AccelerationStructure::top_level()
-            .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
-            .add_instance(
-                &blas,
-                Matrix4::identity(),
-                VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV,
-            )
-            .build(context.device().clone())?;
+        let interpolation =
+            CPUInterpolation::new(context.queue(), &command_buffer, light_field_infos)?;
 
-        command_buffer.begin(VkCommandBufferBeginInfo::new(
-            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        ))?;
+        // command_buffer.end()?;
 
-        blas.generate(&command_buffer)?;
-        tlas.generate(&command_buffer)?;
+        // let submit = SubmitInfo::default().add_command_buffer(&command_buffer);
+        // let fence = Fence::builder().build(context.device().clone())?;
 
-        command_buffer.end()?;
+        // let queue_lock = context.queue().lock()?;
+        // queue_lock.submit(Some(&fence), &[submit])?;
 
-        let submit = SubmitInfo::default().add_command_buffer(&command_buffer);
-        let fence = Fence::builder().build(context.device().clone())?;
+        // context
+        //     .device()
+        //     .wait_for_fences(&[&fence], true, 1_000_000_000)?;
 
-        let queue_lock = context.queue().lock()?;
-        queue_lock.submit(Some(&fence), &[submit])?;
-
-        context
-            .device()
-            .wait_for_fences(&[&fence], true, 1_000_000_000)?;
-
-        Ok((
-            blas,
-            tlas,
-            vertex_gpu_buffer,
-            plane_buffer,
-            images,
-            CPUInterpolation::new(interpolation_infos),
-        ))
+        Ok((plane_buffer, images, interpolation))
     }
 }
 
