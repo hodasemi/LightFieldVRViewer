@@ -413,16 +413,6 @@ impl TScene for LightFieldViewer {
                             image_descriptor,
                         )?;
                     }
-                    InterpolationResult::NoChange => {
-                        self.render(
-                            *index,
-                            command_buffer,
-                            example_descriptor,
-                            as_descriptor,
-                            target_images,
-                            image_descriptor,
-                        )?;
-                    }
                     InterpolationResult::Empty => (),
                 }
             }
@@ -484,16 +474,6 @@ impl TScene for LightFieldViewer {
                             left_image_descriptor,
                         )?;
                     }
-                    InterpolationResult::NoChange => {
-                        self.render(
-                            *left_index,
-                            command_buffer,
-                            left_descriptor,
-                            left_as_descriptor,
-                            left_image,
-                            left_image_descriptor,
-                        )?;
-                    }
                     InterpolationResult::Empty => (),
                 }
 
@@ -513,16 +493,6 @@ impl TScene for LightFieldViewer {
 
                         self.update_right_as(right_blas, right_tlas)?;
 
-                        self.render(
-                            *right_index,
-                            command_buffer,
-                            right_descriptor,
-                            right_as_descriptor,
-                            right_image,
-                            right_image_descriptor,
-                        )?;
-                    }
-                    InterpolationResult::NoChange => {
                         self.render(
                             *right_index,
                             command_buffer,
@@ -823,28 +793,23 @@ impl LightFieldViewer {
         CPUInterpolation,
     )> {
         let mut light_field_infos = Vec::with_capacity(light_fields.len());
-        // let mut vertex_data = Vec::new();
-        // let mut plane_infos = Vec::new();
-        // let mut interpolation_infos = Vec::new();
         let mut images = Vec::new();
 
         let mut max_planes = 0;
 
-        // while let Some(light_field) = light_fields.pop() {
         for light_field in light_fields.into_iter() {
             let frustum = light_field.frustum();
             let planes = light_field.into_data();
 
             let mut inner_planes = Vec::with_capacity(planes.len());
 
-            // while let Some(mut plane) = planes.pop() {
-            for mut plane in planes.into_iter() {
+            for plane in planes.into_iter() {
                 max_planes += 1;
 
                 let mut image_infos = Vec::with_capacity(plane.content.len());
 
                 // add plane contents to buffers
-                while let Some((image, ratios, center)) = plane.content.pop() {
+                for (image, ratios, center) in plane.content.into_iter() {
                     // get image index and add image
                     let image_index = images.len() as u32;
                     images.push(image);

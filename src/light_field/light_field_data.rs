@@ -124,8 +124,8 @@ struct DisparityPlane {
 impl LightFieldData {
     pub fn new(
         context: &Arc<Context>,
-        mut frustums: Vec<CameraFrustum>,
-        mut image_data: Vec<(
+        frustums: Vec<CameraFrustum>,
+        image_data: Vec<(
             Vec<(ImageBuffer<Rgba<u8>, Vec<u8>>, usize, Vec<f32>)>,
             usize,
             usize,
@@ -133,22 +133,18 @@ impl LightFieldData {
         frustum_extent: (usize, usize),
         baseline: f32,
     ) -> VerboseResult<LightFieldData> {
-        // move data from vector to internal more practical formats with:
-        //      while Some(...) = vector.pop() {}
-        // this moves ownership into new structures
-
         // create a map for frustums
         let mut sorted_frustums = HashMap::new();
 
-        while let Some(frustum) = frustums.pop() {
+        for frustum in frustums.into_iter() {
             sorted_frustums.insert(frustum.position(), frustum);
         }
 
         // sort all images by their respective disparity layers
         let mut disparity_planes: Vec<DisparityPlane> = Vec::new();
 
-        while let Some((mut images, x, y)) = image_data.pop() {
-            while let Some((image, disparity_index, depth_values)) = images.pop() {
+        for (images, x, y) in image_data.into_iter() {
+            for (image, disparity_index, depth_values) in images.into_iter() {
                 // create plane image
                 let plane_image = PlaneImage {
                     image,
@@ -173,9 +169,6 @@ impl LightFieldData {
             }
         }
 
-        // sort ascending by disparity index
-        disparity_planes.sort_by(|lhs, rhs| lhs.disparity_index.cmp(&rhs.disparity_index));
-
         let mut planes = Vec::with_capacity(disparity_planes.len());
 
         // (1) find corner frustums
@@ -191,7 +184,7 @@ impl LightFieldData {
             right_bottom_frustum,
         );
 
-        while let Some(mut disparity_plane) = disparity_planes.pop() {
+        for disparity_plane in disparity_planes.into_iter() {
             // calculate average depth of disparity layer
             let mut total_depth = 0.0;
             let mut total_count = 0;
@@ -202,6 +195,10 @@ impl LightFieldData {
             }
 
             let layer_depth = total_depth / total_count as f32;
+
+            if layer_depth > 100000.0 {
+                continue;
+            }
 
             println!("\nlayer index: {}", disparity_plane.disparity_index);
             println!("{:.2}", layer_depth);
@@ -226,7 +223,7 @@ impl LightFieldData {
 
             let mut image_locations = Vec::new();
 
-            while let Some(image) = disparity_plane.images.pop() {
+            for image in disparity_plane.images.into_iter() {
                 let left_ratio = base_line_ratio * image.frustum.0 as f32;
                 let right_ratio = left_ratio + width_ratio;
                 let top_ratio = base_line_ratio * image.frustum.1 as f32;

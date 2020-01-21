@@ -30,7 +30,7 @@ fn main() -> VerboseResult<()> {
     // let context = create_desktop_context(viewer_config.enable_vsync)?;
 
     // spawn threads to load light fields
-    let mut join_handles: Vec<thread::JoinHandle<VerboseResult<LightField>>> = viewer_config
+    let join_handles: Vec<thread::JoinHandle<VerboseResult<LightField>>> = viewer_config
         .light_fields
         .iter()
         .cloned()
@@ -44,7 +44,7 @@ fn main() -> VerboseResult<()> {
     // wait for thread to join
     let mut light_fields = Vec::new();
 
-    while let Some(join_handle) = join_handles.pop() {
+    for join_handle in join_handles.into_iter() {
         let light_field = join_handle.join()??;
 
         light_fields.push(light_field);

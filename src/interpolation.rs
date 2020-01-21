@@ -71,9 +71,9 @@ impl Plane {
     }
 }
 
+#[derive(Clone)]
 pub enum InterpolationResult {
     AccelerationStructures(Arc<AccelerationStructure>, Arc<AccelerationStructure>),
-    NoChange,
     Empty,
 }
 
@@ -81,6 +81,8 @@ pub struct CPUInterpolation {
     light_fields: Vec<LightField>,
 
     last_position: Mutex<Vector3<f32>>,
+
+    last_result: Mutex<InterpolationResult>,
 }
 
 impl CPUInterpolation {
@@ -101,6 +103,7 @@ impl CPUInterpolation {
         Ok(CPUInterpolation {
             light_fields,
             last_position: Mutex::new(Vector3::new(f32::MAX, f32::MAX, f32::MAX)),
+            last_result: Mutex::new(InterpolationResult::Empty),
         })
     }
 
@@ -115,7 +118,7 @@ impl CPUInterpolation {
         let mut last_position = self.last_position.lock()?;
 
         if *last_position == my_position {
-            return Ok(InterpolationResult::NoChange);
+            return Ok(self.last_result.lock()?.clone());
         }
 
         *last_position = my_position;
@@ -155,22 +158,6 @@ impl CPUInterpolation {
 
                     X - is our reference point
                     */
-
-                    // if viewer_barycentric.x <= 1.0
-                    //     && viewer_barycentric.x >= 0.0
-                    //     && viewer_barycentric.y <= 1.0
-                    //     && viewer_barycentric.y >= 0.0
-                    // {
-                    //     // We hit the plane
-                    //     selector[i] = Self::selector_of_four(
-                    //         self.find_closest_top_left(plane, viewer_barycentric),
-                    //         self.find_closest_bottom_left(plane, viewer_barycentric),
-                    //         self.find_closest_top_right(plane, viewer_barycentric),
-                    //         self.find_closest_bottom_right(plane, viewer_barycentric),
-                    //     )?;
-                    // } else {
-                    //     selector[i] = InfoSelector::default();
-                    // }
 
                     let (indices, bary) = if viewer_barycentric.y < 0.0 {
                         // check horizontal axis
@@ -292,6 +279,7 @@ impl CPUInterpolation {
 
         // return if haven't added any geometry to the blas
         if i == 0 {
+            *self.last_result.lock()? = InterpolationResult::Empty;
             return Ok(InterpolationResult::Empty);
         }
 
@@ -304,6 +292,9 @@ impl CPUInterpolation {
 
         blas.generate(command_buffer)?;
         tlas.generate(command_buffer)?;
+
+        *self.last_result.lock()? =
+            InterpolationResult::AccelerationStructures(blas.clone(), tlas.clone());
 
         Ok(InterpolationResult::AccelerationStructures(blas, tlas))
     }
