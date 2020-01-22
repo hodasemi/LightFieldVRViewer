@@ -121,12 +121,9 @@ impl CPUInterpolation {
             return Ok(self.last_result.lock()?.clone());
         }
 
-        println!("My Position: {:?}", my_position);
-
         *last_position = my_position;
 
         let mut blasses = Vec::new();
-
         let mut i = 0;
 
         for light_field in self.light_fields.iter() {
