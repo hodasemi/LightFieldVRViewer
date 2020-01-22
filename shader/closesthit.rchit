@@ -13,9 +13,7 @@ struct PlaneInfo {
     vec4 normal;
 
     ivec4 indices;
-    vec2 bary;
-
-    int padding[2];
+    vec4 bary;
 };
 
 layout(set = 0, binding = 1) readonly buffer PlaneInfos {
@@ -67,29 +65,6 @@ vec2 calculate_barycentrics(PlaneInfo plane, vec3 point) {
 
     return barycentrics;
 }
-
-// bool check_inside(PlaneImageInfo image_info, vec2 bary) {
-//     return (bary.x >= image_info.left) &&
-//         (bary.x <= image_info.right) &&
-//         (bary.y >= image_info.top) &&
-//         (bary.y <= image_info.bottom);
-// }
-
-// vec2 normalized_uv(PlaneImageInfo image_info, vec2 bary) {
-//     float u = (bary.x - image_info.left) / (image_info.right - image_info.left);
-//     float v = (bary.y - image_info.top) / (image_info.bottom - image_info.top);
-
-//     // swap u and v
-//     return vec2(v, u);
-// }
-
-// vec4 single_image(PlaneImageInfo image_info, vec2 hit_bary) {
-//     // vec2 uv = normalized_uv(image_info, hit_bary);
-
-//     vec2 uv = hit_bary.yx;
-
-//     return texture(images[nonuniformEXT(image_info.image_index)], uv);
-// }
 
 vec4 single_image(int index, vec2 hit_bary) {
     // vec2 uv = normalized_uv(image_info, hit_bary);
@@ -145,7 +120,7 @@ void interpolate_images(PlaneInfo plane, vec2 hit_bary) {
         vec4 third = single_image(plane.indices[2], hit_bary);
         vec4 fourth = single_image(plane.indices[3], hit_bary);
 
-        color = bilinear(plane.bary, first, second, third, fourth);
+        color = bilinear(plane.bary.xy, first, second, third, fourth);
     }
 
     set_pay_load(color);

@@ -7,7 +7,7 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use cgmath::{vec2, vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
+use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
 
 use super::{
     feet_renderer::FeetRenderer,
@@ -704,9 +704,7 @@ impl LightFieldViewer {
                     normal: plane_normal.extend(0.0),
 
                     indices: vec4(-1, -1, -1, -1),
-                    bary: vec2(0.0, 0.0),
-
-                    padding: [0; 2],
+                    bary: vec4(0.0, 0.0, 0.0, 0.0),
                 };
 
                 // create vertex data
@@ -794,10 +792,24 @@ pub struct PlaneInfo {
 
     pub normal: Vector4<f32>,
 
-    pub indices: Vector4<i32>,
-    pub bary: Vector2<f32>,
+    indices: Vector4<i32>,
+    bary: Vector4<f32>,
+}
 
-    padding: [i32; 2],
+impl PlaneInfo {
+    pub fn clone(&self, indices: Vector4<i32>, bary: Vector2<f32>) -> Self {
+        PlaneInfo {
+            top_left: self.top_left,
+            top_right: self.top_right,
+            bottom_left: self.bottom_left,
+            bottom_right: self.bottom_right,
+
+            normal: self.normal,
+
+            indices,
+            bary: bary.extend(0.0).extend(0.0),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -263,12 +263,7 @@ impl CPUInterpolation {
                         }
                     };
 
-                    let mut info = plane.info.clone();
-
-                    info.indices = indices;
-                    info.bary = bary;
-
-                    plane_infos[i] = info;
+                    plane_infos[i] = plane.info.clone(indices, bary);
 
                     blas_builder = blas_builder.add_vertices(&plane.vertex_buffer, None);
 
