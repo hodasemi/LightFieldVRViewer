@@ -73,7 +73,7 @@ impl Plane {
 
 #[derive(Clone)]
 pub enum InterpolationResult {
-    AccelerationStructures(Arc<AccelerationStructure>, Arc<AccelerationStructure>),
+    AccelerationStructures(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>),
     Empty,
 }
 
@@ -125,8 +125,7 @@ impl CPUInterpolation {
 
         *last_position = my_position;
 
-        let mut blas_builder = AccelerationStructure::bottom_level()
-            .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
+        let mut blasses = Vec::new();
 
         let mut i = 0;
 
@@ -267,7 +266,14 @@ impl CPUInterpolation {
 
                     plane_infos[i] = plane.info.clone(indices, bary);
 
-                    blas_builder = blas_builder.add_vertices(&plane.vertex_buffer, None);
+                    let blas = AccelerationStructure::bottom_level()
+                        .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
+                        .add_vertices(&plane.vertex_buffer, None)
+                        .build(context.device().clone())?;
+
+                    blas.generate(command_buffer)?;
+
+                    blasses.push(blas);
 
                     i += 1;
                 }
@@ -280,20 +286,21 @@ impl CPUInterpolation {
             return Ok(InterpolationResult::Empty);
         }
 
-        let blas = blas_builder.build(context.device().clone())?;
+        let mut tlas_builder = AccelerationStructure::top_level()
+            .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
 
-        let tlas = AccelerationStructure::top_level()
-            .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
-            .add_instance(&blas, None, 0)
-            .build(context.device().clone())?;
+        for blas in blasses.iter() {
+            tlas_builder = tlas_builder.add_instance(blas, None, 0);
+        }
 
-        blas.generate(command_buffer)?;
+        let tlas = tlas_builder.build(context.device().clone())?;
+
         tlas.generate(command_buffer)?;
 
         *self.last_result.lock()? =
-            InterpolationResult::AccelerationStructures(blas.clone(), tlas.clone());
+            InterpolationResult::AccelerationStructures(blasses.clone(), tlas.clone());
 
-        Ok(InterpolationResult::AccelerationStructures(blas, tlas))
+        Ok(InterpolationResult::AccelerationStructures(blasses, tlas))
     }
 
     /// https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection#Algebraic_form

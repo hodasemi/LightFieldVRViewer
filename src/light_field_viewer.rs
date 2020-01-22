@@ -31,8 +31,9 @@ pub struct LightFieldViewer {
     sbt: ShaderBindingTable,
 
     // scene data
-    acceleration_structures:
-        Mutex<Option<TargetMode<Option<(Arc<AccelerationStructure>, Arc<AccelerationStructure>)>>>>,
+    acceleration_structures: Mutex<
+        Option<TargetMode<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>>>,
+    >,
     _images: Vec<Arc<Image>>,
     plane_buffer: TargetMode<Arc<Buffer<PlaneInfo>>>,
 
@@ -267,12 +268,12 @@ impl TScene for LightFieldViewer {
                         .ok_or("failed inverting simulation view")?,
                     &self.interpolation,
                 )? {
-                    InterpolationResult::AccelerationStructures(blas, tlas) => {
+                    InterpolationResult::AccelerationStructures(blasses, tlas) => {
                         as_descriptor
                             .update(&[DescriptorWrite::acceleration_structures(0, &[&tlas])]);
 
                         *self.acceleration_structures.lock()? =
-                            Some(TargetMode::Single(Some((blas, tlas))));
+                            Some(TargetMode::Single(Some((blasses, tlas))));
 
                         self.render(
                             *index,
@@ -329,11 +330,11 @@ impl TScene for LightFieldViewer {
                         .ok_or("failed inverting left view")?,
                     &self.interpolation,
                 )? {
-                    InterpolationResult::AccelerationStructures(left_blas, left_tlas) => {
+                    InterpolationResult::AccelerationStructures(left_blasses, left_tlas) => {
                         left_as_descriptor
                             .update(&[DescriptorWrite::acceleration_structures(0, &[&left_tlas])]);
 
-                        self.update_left_as(left_blas, left_tlas)?;
+                        self.update_left_as(left_blasses, left_tlas)?;
 
                         self.render(
                             *left_index,
@@ -357,11 +358,11 @@ impl TScene for LightFieldViewer {
                         .ok_or("failed inverting right view")?,
                     &self.interpolation,
                 )? {
-                    InterpolationResult::AccelerationStructures(right_blas, right_tlas) => {
+                    InterpolationResult::AccelerationStructures(right_blasses, right_tlas) => {
                         right_as_descriptor
                             .update(&[DescriptorWrite::acceleration_structures(0, &[&right_tlas])]);
 
-                        self.update_right_as(right_blas, right_tlas)?;
+                        self.update_right_as(right_blasses, right_tlas)?;
 
                         self.render(
                             *right_index,
@@ -614,7 +615,7 @@ impl LightFieldViewer {
 
     fn update_left_as(
         &self,
-        blas: Arc<AccelerationStructure>,
+        blasses: Vec<Arc<AccelerationStructure>>,
         tlas: Arc<AccelerationStructure>,
     ) -> VerboseResult<()> {
         let mut acceleration_structures = self.acceleration_structures.lock()?;
@@ -623,10 +624,10 @@ impl LightFieldViewer {
             Some(acceleration_structures) => {
                 let (left, _) = acceleration_structures.stereo_mut()?;
 
-                *left = Some((blas, tlas));
+                *left = Some((blasses, tlas));
             }
             None => {
-                *acceleration_structures = Some(TargetMode::Stereo(None, Some((blas, tlas))));
+                *acceleration_structures = Some(TargetMode::Stereo(None, Some((blasses, tlas))));
             }
         }
 
@@ -635,7 +636,7 @@ impl LightFieldViewer {
 
     fn update_right_as(
         &self,
-        blas: Arc<AccelerationStructure>,
+        blasses: Vec<Arc<AccelerationStructure>>,
         tlas: Arc<AccelerationStructure>,
     ) -> VerboseResult<()> {
         let mut acceleration_structures = self.acceleration_structures.lock()?;
@@ -644,10 +645,10 @@ impl LightFieldViewer {
             Some(acceleration_structures) => {
                 let (_, right) = acceleration_structures.stereo_mut()?;
 
-                *right = Some((blas, tlas));
+                *right = Some((blasses, tlas));
             }
             None => {
-                *acceleration_structures = Some(TargetMode::Stereo(None, Some((blas, tlas))));
+                *acceleration_structures = Some(TargetMode::Stereo(None, Some((blasses, tlas))));
             }
         }
 
@@ -760,24 +761,8 @@ impl LightFieldViewer {
 
         let command_buffer = context.render_core().allocate_primary_buffer()?;
 
-        // command_buffer.begin(VkCommandBufferBeginInfo::new(
-        //     VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        // ))?;
-
         let interpolation =
             CPUInterpolation::new(context.queue(), &command_buffer, light_field_infos)?;
-
-        // command_buffer.end()?;
-
-        // let submit = SubmitInfo::default().add_command_buffer(&command_buffer);
-        // let fence = Fence::builder().build(context.device().clone())?;
-
-        // let queue_lock = context.queue().lock()?;
-        // queue_lock.submit(Some(&fence), &[submit])?;
-
-        // context
-        //     .device()
-        //     .wait_for_fences(&[&fence], true, 1_000_000_000)?;
 
         Ok((plane_buffer, images, interpolation))
     }

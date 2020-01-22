@@ -37,17 +37,7 @@ float distance_to_line(vec3 reference, vec3 normal, vec3 target) {
 }
 
 PlaneInfo get_plane() {
-    int index = gl_PrimitiveID;
-
-    // there are 2 primitives per plane
-
-    if ((index % 2) != 0) {
-        index = index - 1;
-    }
-
-    index = index / 2;
-
-    return plane_infos.data[index];
+    return plane_infos.data[gl_InstanceID];
 }
 
 // calculate barycentrics of point in reference to the plane
@@ -67,8 +57,6 @@ vec2 calculate_barycentrics(PlaneInfo plane, vec3 point) {
 }
 
 vec4 single_image(int index, vec2 hit_bary) {
-    // vec2 uv = normalized_uv(image_info, hit_bary);
-
     vec2 uv = hit_bary.yx;
 
     return texture(images[nonuniformEXT(index)], uv);
@@ -94,8 +82,6 @@ vec4 bilinear(
     vec4 bottom_left_color,
     vec4 bottom_right_color
 ) {
-    // vec4 left = top_left.y * top_left_color + bottom_left.y * bottom_left_color;
-
     vec4 left = linear(bary.y, top_left_color, bottom_left_color);
     vec4 right = linear(bary.y, top_right_color, bottom_right_color);
 
