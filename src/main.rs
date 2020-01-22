@@ -2,6 +2,7 @@ use cgmath::Deg;
 use context::prelude::*;
 
 pub mod config;
+pub mod feet_renderer;
 pub mod interpolation;
 pub mod light_field;
 pub mod light_field_viewer;
