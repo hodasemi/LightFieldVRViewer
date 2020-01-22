@@ -190,7 +190,7 @@ impl TScene for LightFieldViewer {
         if (current_time_stamp - last_time_stamp) >= Duration::from_secs_f32(1.0) {
             *self.last_time_stamp.lock()? = last_time_stamp + Duration::from_secs_f32(1.0);
 
-            println!("fps: {}", self.fps_count.load(SeqCst));
+            // println!("fps: {}", self.fps_count.load(SeqCst));
             self.fps_count.store(0, SeqCst);
         }
 

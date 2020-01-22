@@ -34,6 +34,8 @@ pub struct LightField {
 
 impl LightField {
     pub fn new(context: &Arc<Context>, dir: &str) -> VerboseResult<Self> {
+        println!("started loading light field {}", dir);
+
         let config = Config::load(&format!("{}/parameters.cfg", dir))?;
 
         let mut threads = Vec::with_capacity(

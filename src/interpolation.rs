@@ -117,9 +117,11 @@ impl CPUInterpolation {
         let my_position = (inv_view * vec4(0.0, 0.0, 0.0, 1.0)).truncate();
         let mut last_position = self.last_position.lock()?;
 
-        if *last_position == my_position {
+        if Self::check_pos(*last_position, my_position) {
             return Ok(self.last_result.lock()?.clone());
         }
+
+        println!("My Position: {:?}", my_position);
 
         *last_position = my_position;
 
@@ -323,6 +325,15 @@ impl CPUInterpolation {
         let distance = numerator / denominator;
 
         Some(origin + (direction * distance))
+    }
+
+    fn check_pos(p1: Vector3<f32>, p2: Vector3<f32>) -> bool {
+        Self::almost_eq(p1.x, p2.x) && Self::almost_eq(p1.y, p2.y) && Self::almost_eq(p1.z, p2.z)
+    }
+
+    #[inline]
+    fn almost_eq(f1: f32, f2: f32) -> bool {
+        (f1 - f2).abs() < 0.0001
     }
 
     fn calculate_barycentrics(plane: &Plane, point: Vector3<f32>) -> Vector2<f32> {

@@ -200,9 +200,6 @@ impl LightFieldData {
                 continue;
             }
 
-            println!("\nlayer index: {}", disparity_plane.disparity_index);
-            println!("{:.2}", layer_depth);
-
             // (2) get layer extent
             let left_top = left_top_frustum.get_corners_at_depth(layer_depth).0;
             let left_bottom = left_bottom_frustum.get_corners_at_depth(layer_depth).1;
