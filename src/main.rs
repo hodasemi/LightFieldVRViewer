@@ -45,9 +45,10 @@ fn main() -> VerboseResult<()> {
     let mut light_fields = Vec::new();
 
     for join_handle in join_handles.into_iter() {
-        let light_field = join_handle.join()??;
-
-        light_fields.push(light_field);
+        match join_handle.join()? {
+            Ok(light_field) => light_fields.push(light_field),
+            Err(msg) => println!("{}", msg),
+        }
     }
 
     // create viewer
