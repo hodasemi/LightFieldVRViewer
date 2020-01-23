@@ -21,7 +21,7 @@ pub struct LightFieldFrustum {
     right: FrustumPlane,
     top: FrustumPlane,
     bottom: FrustumPlane,
-    // back ?
+    // front + back ?
 }
 
 impl LightFieldFrustum {
@@ -79,11 +79,6 @@ impl FrustumPlane {
             normal,
         }
     }
-
-    // // https://en.wikipedia.org/wiki/Plane_%28geometry%29#Distance_from_a_point_to_a_plane
-    // fn distance(&self, p: Vector3<f32>) -> f32 {
-    //     self.normal.x * p.x + self.normal.y * p.y + self.normal.z * p.z + self.d
-    // }
 
     fn is_above(&self, p: Vector3<f32>) -> bool {
         self.normal.dot(p - self.point) > 0.0

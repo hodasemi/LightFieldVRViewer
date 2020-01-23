@@ -113,7 +113,7 @@ impl LightFieldViewer {
                 None,
             )
             .add_hit_shaders(
-                &[ShaderModule::from_slice(
+                vec![ShaderModule::from_slice(
                     device.clone(),
                     include_bytes!("../shader/closesthit.rchit.spv"),
                     ShaderType::ClosestHit,
@@ -234,7 +234,7 @@ impl TScene for LightFieldViewer {
             &self.as_descriptor,
             &self.output_image_descriptor,
             &self.context.render_core().images()?,
-            rasterizer.pipelines(),
+            rasterizer.triangle_pipelines(),
             rasterizer.render_targets(),
             &self.plane_buffer,
         ) {

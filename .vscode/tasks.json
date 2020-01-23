@@ -57,6 +57,8 @@
                 "Build miss shader",
                 "Build feet vertex shader",
                 "Build feet fragment shader",
+                "Build line vertex shader",
+                "Build line fragment shader",
             ]
         },
         {
@@ -112,6 +114,28 @@
             "windows": {
                 // works in windows powershell
                 "command": "cd shader ; glslangValidator -V feet.frag -o feet.frag.spv",
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Build line vertex shader",
+            "linux": {
+                "command": "cd shader/ && glslangValidator -V line.vert -o line.vert.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader ; glslangValidator -V line.vert -o line.vert.spv",
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Build line fragment shader",
+            "linux": {
+                "command": "cd shader/ && glslangValidator -V line.frag -o line.frag.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader ; glslangValidator -V line.frag -o line.frag.spv",
             }
         }
     ]
