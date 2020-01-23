@@ -71,18 +71,12 @@ impl Plane {
     }
 }
 
-#[derive(Clone)]
-pub enum InterpolationResult {
-    AccelerationStructures(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>),
-    Empty,
-}
-
 pub struct CPUInterpolation {
     light_fields: Vec<LightField>,
 
     last_position: Mutex<Vector3<f32>>,
 
-    last_result: Mutex<InterpolationResult>,
+    last_result: Mutex<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>>,
 }
 
 impl CPUInterpolation {
@@ -103,7 +97,7 @@ impl CPUInterpolation {
         Ok(CPUInterpolation {
             light_fields,
             last_position: Mutex::new(Vector3::new(f32::MAX, f32::MAX, f32::MAX)),
-            last_result: Mutex::new(InterpolationResult::Empty),
+            last_result: Mutex::new(None),
         })
     }
 
@@ -113,7 +107,7 @@ impl CPUInterpolation {
         context: &Context,
         inv_view: Matrix4<f32>,
         mut plane_infos: impl IndexMut<usize, Output = PlaneInfo>,
-    ) -> VerboseResult<InterpolationResult> {
+    ) -> VerboseResult<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>> {
         let my_position = (inv_view * vec4(0.0, 0.0, 0.0, 1.0)).truncate();
         let mut last_position = self.last_position.lock()?;
 
@@ -130,7 +124,7 @@ impl CPUInterpolation {
             let viewer_is_inside = light_field.frustum.check(my_position);
 
             if !viewer_is_inside {
-                continue;
+                // continue;
             }
 
             for plane in light_field.planes.iter() {
@@ -279,8 +273,8 @@ impl CPUInterpolation {
 
         // return if haven't added any geometry to the blas
         if i == 0 {
-            *self.last_result.lock()? = InterpolationResult::Empty;
-            return Ok(InterpolationResult::Empty);
+            *self.last_result.lock()? = None;
+            return Ok(None);
         }
 
         let mut tlas_builder = AccelerationStructure::top_level()
@@ -294,10 +288,9 @@ impl CPUInterpolation {
 
         tlas.generate(command_buffer)?;
 
-        *self.last_result.lock()? =
-            InterpolationResult::AccelerationStructures(blasses.clone(), tlas.clone());
+        *self.last_result.lock()? = Some((blasses.clone(), tlas.clone()));
 
-        Ok(InterpolationResult::AccelerationStructures(blasses, tlas))
+        Ok(Some((blasses, tlas)))
     }
 
     /// https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection#Algebraic_form

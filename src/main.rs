@@ -52,6 +52,11 @@ fn main() -> VerboseResult<()> {
         }
     }
 
+    if light_fields.is_empty() {
+        println!("no fields loaded!\nclosing ...");
+        create_error!("");
+    }
+
     // create viewer
     let light_field_viewer = LightFieldViewer::new(
         &context,

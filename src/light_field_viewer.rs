@@ -11,7 +11,7 @@ use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector
 
 use super::{
     feet_renderer::FeetRenderer,
-    interpolation::{CPUInterpolation, InterpolationResult},
+    interpolation::CPUInterpolation,
     light_field::{light_field_data::PlaneImageRatios, LightField},
     view_emulator::ViewEmulator,
 };
@@ -258,7 +258,7 @@ impl TScene for LightFieldViewer {
                     transform,
                 )?;
 
-                match Self::update_plane_buffer(
+                if let Some((blasses, tlas)) = Self::update_plane_buffer(
                     command_buffer,
                     &self.context,
                     plane_buffer,
@@ -268,23 +268,19 @@ impl TScene for LightFieldViewer {
                         .ok_or("failed inverting simulation view")?,
                     &self.interpolation,
                 )? {
-                    InterpolationResult::AccelerationStructures(blasses, tlas) => {
-                        as_descriptor
-                            .update(&[DescriptorWrite::acceleration_structures(0, &[&tlas])]);
+                    as_descriptor.update(&[DescriptorWrite::acceleration_structures(0, &[&tlas])]);
 
-                        *self.acceleration_structures.lock()? =
-                            Some(TargetMode::Single(Some((blasses, tlas))));
+                    *self.acceleration_structures.lock()? =
+                        Some(TargetMode::Single(Some((blasses, tlas))));
 
-                        self.render(
-                            *index,
-                            command_buffer,
-                            example_descriptor,
-                            as_descriptor,
-                            target_images,
-                            image_descriptor,
-                        )?;
-                    }
-                    InterpolationResult::Empty => (),
+                    self.render(
+                        *index,
+                        command_buffer,
+                        example_descriptor,
+                        as_descriptor,
+                        target_images,
+                        image_descriptor,
+                    )?;
                 }
             }
             (
@@ -320,7 +316,7 @@ impl TScene for LightFieldViewer {
                     right_transform,
                 )?;
 
-                match Self::update_plane_buffer(
+                if let Some((left_blasses, left_tlas)) = Self::update_plane_buffer(
                     command_buffer,
                     &self.context,
                     left_plane_buffer,
@@ -330,25 +326,22 @@ impl TScene for LightFieldViewer {
                         .ok_or("failed inverting left view")?,
                     &self.interpolation,
                 )? {
-                    InterpolationResult::AccelerationStructures(left_blasses, left_tlas) => {
-                        left_as_descriptor
-                            .update(&[DescriptorWrite::acceleration_structures(0, &[&left_tlas])]);
+                    left_as_descriptor
+                        .update(&[DescriptorWrite::acceleration_structures(0, &[&left_tlas])]);
 
-                        self.update_left_as(left_blasses, left_tlas)?;
+                    self.update_left_as(left_blasses, left_tlas)?;
 
-                        self.render(
-                            *left_index,
-                            command_buffer,
-                            left_descriptor,
-                            left_as_descriptor,
-                            left_image,
-                            left_image_descriptor,
-                        )?;
-                    }
-                    InterpolationResult::Empty => (),
+                    self.render(
+                        *left_index,
+                        command_buffer,
+                        left_descriptor,
+                        left_as_descriptor,
+                        left_image,
+                        left_image_descriptor,
+                    )?;
                 }
 
-                match Self::update_plane_buffer(
+                if let Some((right_blasses, right_tlas)) = Self::update_plane_buffer(
                     command_buffer,
                     &self.context,
                     right_plane_buffer,
@@ -358,22 +351,19 @@ impl TScene for LightFieldViewer {
                         .ok_or("failed inverting right view")?,
                     &self.interpolation,
                 )? {
-                    InterpolationResult::AccelerationStructures(right_blasses, right_tlas) => {
-                        right_as_descriptor
-                            .update(&[DescriptorWrite::acceleration_structures(0, &[&right_tlas])]);
+                    right_as_descriptor
+                        .update(&[DescriptorWrite::acceleration_structures(0, &[&right_tlas])]);
 
-                        self.update_right_as(right_blasses, right_tlas)?;
+                    self.update_right_as(right_blasses, right_tlas)?;
 
-                        self.render(
-                            *right_index,
-                            command_buffer,
-                            right_descriptor,
-                            right_as_descriptor,
-                            right_image,
-                            right_image_descriptor,
-                        )?;
-                    }
-                    InterpolationResult::Empty => (),
+                    self.render(
+                        *right_index,
+                        command_buffer,
+                        right_descriptor,
+                        right_as_descriptor,
+                        right_image,
+                        right_image_descriptor,
+                    )?;
                 }
             }
             _ => create_error!("invalid target mode setup"),
@@ -604,7 +594,7 @@ impl LightFieldViewer {
         plane_buffer: &Arc<Buffer<PlaneInfo>>,
         inverted_view: Matrix4<f32>,
         interpolation: &CPUInterpolation,
-    ) -> VerboseResult<InterpolationResult> {
+    ) -> VerboseResult<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>> {
         interpolation.calculate_interpolation(
             command_buffer,
             context,
