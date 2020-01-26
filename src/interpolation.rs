@@ -124,7 +124,7 @@ impl CPUInterpolation {
             let viewer_is_inside = light_field.frustum.check(my_position);
 
             if !viewer_is_inside {
-                // continue;
+                continue;
             }
 
             for plane in light_field.planes.iter() {

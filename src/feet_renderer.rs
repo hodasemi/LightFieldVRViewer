@@ -1,4 +1,5 @@
 use context::prelude::*;
+use rand::Rng;
 
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
@@ -101,15 +102,21 @@ impl FeetRenderer {
             // outline data
             let frustum_edges = light_field.outlines();
 
+            let red = rand::thread_rng().gen_range(0.1, 0.9);
+            let green = rand::thread_rng().gen_range(0.1, 0.9);
+            let blue = rand::thread_rng().gen_range(0.1, 0.9);
+
+            let color = vec4(red, green, blue, 1.0);
+
             for (start, end) in frustum_edges.into_iter() {
                 outline_vertex_data.push(ColoredVertex {
                     position: *start,
-                    color: vec4(0.04, 0.8, 0.8, 1.0),
+                    color,
                 });
 
                 outline_vertex_data.push(ColoredVertex {
                     position: *end,
-                    color: vec4(0.04, 0.8, 0.8, 1.0),
+                    color,
                 })
             }
         }

@@ -84,7 +84,7 @@ impl FrustumPlane {
     }
 
     fn is_above(&self, p: Vector3<f32>) -> bool {
-        self.normal.dot(p - self.point) > 0.0
+        self.normal.dot(self.point - p) > 0.0
     }
 }
 
