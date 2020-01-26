@@ -13,6 +13,9 @@ pub struct LightFieldData {
     data: Vec<Plane>,
 
     pub frustum: LightFieldFrustum,
+
+    // (start, end) of 4 lines
+    pub frustum_edges: [(Vector3<f32>, Vector3<f32>); 4],
 }
 
 #[derive(Debug, Clone)]
@@ -127,6 +130,7 @@ impl LightFieldData {
         )>,
         frustum_extent: (usize, usize),
         baseline: f32,
+        focus_distance: f32,
     ) -> VerboseResult<LightFieldData> {
         // create a map for frustums
         let mut sorted_frustums = HashMap::new();
@@ -252,10 +256,31 @@ impl LightFieldData {
             })
         }
 
+        let frustum_edges = [
+            (
+                left_top_frustum.get_corners_at_depth(0.0).0,
+                left_top_frustum.get_corners_at_depth(focus_distance).0,
+            ),
+            (
+                left_bottom_frustum.get_corners_at_depth(0.0).1,
+                left_bottom_frustum.get_corners_at_depth(focus_distance).1,
+            ),
+            (
+                right_top_frustum.get_corners_at_depth(0.0).2,
+                right_top_frustum.get_corners_at_depth(focus_distance).2,
+            ),
+            (
+                right_bottom_frustum.get_corners_at_depth(0.0).3,
+                right_bottom_frustum.get_corners_at_depth(focus_distance).3,
+            ),
+        ];
+
         Ok(LightFieldData {
             data: planes,
 
             frustum,
+
+            frustum_edges,
         })
     }
 

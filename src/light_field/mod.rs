@@ -168,6 +168,7 @@ impl LightField {
                 config.extrinsics.vertical_camera_count as usize,
             ),
             config.extrinsics.baseline(),
+            config.extrinsics.focus_distance,
         )?;
 
         println!("finished loading light field {}", dir);
@@ -186,6 +187,10 @@ impl LightField {
 
     pub fn frustum(&self) -> LightFieldFrustum {
         self.light_field_data.frustum.clone()
+    }
+
+    pub fn outlines(&self) -> [(Vector3<f32>, Vector3<f32>); 4] {
+        self.light_field_data.frustum_edges
     }
 
     pub fn into_data(self) -> Vec<Plane> {

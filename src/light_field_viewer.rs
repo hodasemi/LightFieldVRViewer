@@ -235,6 +235,7 @@ impl TScene for LightFieldViewer {
             &self.output_image_descriptor,
             &self.context.render_core().images()?,
             rasterizer.triangle_pipelines(),
+            rasterizer.line_pipelines(),
             rasterizer.render_targets(),
             &self.plane_buffer,
         ) {
@@ -245,6 +246,7 @@ impl TScene for LightFieldViewer {
                 TargetMode::Single(image_descriptor),
                 TargetMode::Single(target_images),
                 TargetMode::Single(feet_pipeline),
+                TargetMode::Single(line_pipeline),
                 TargetMode::Single(feet_render_target),
                 TargetMode::Single(plane_buffer),
             ) => {
@@ -253,6 +255,7 @@ impl TScene for LightFieldViewer {
                 self.feet.render(
                     command_buffer,
                     feet_pipeline,
+                    line_pipeline,
                     feet_render_target,
                     *index,
                     transform,
@@ -290,6 +293,7 @@ impl TScene for LightFieldViewer {
                 TargetMode::Stereo(left_image_descriptor, right_image_descriptor),
                 TargetMode::Stereo(left_image, right_image),
                 TargetMode::Stereo(left_feet_pipeline, right_feet_pipeline),
+                TargetMode::Stereo(left_line_pipeline, right_line_pipeline),
                 TargetMode::Stereo(left_feet_render_target, right_feet_render_target),
                 TargetMode::Stereo(left_plane_buffer, right_plane_buffer),
             ) => {
@@ -303,6 +307,7 @@ impl TScene for LightFieldViewer {
                 self.feet.render(
                     command_buffer,
                     left_feet_pipeline,
+                    left_line_pipeline,
                     left_feet_render_target,
                     *left_index,
                     left_transform,
@@ -311,6 +316,7 @@ impl TScene for LightFieldViewer {
                 self.feet.render(
                     command_buffer,
                     right_feet_pipeline,
+                    right_line_pipeline,
                     right_feet_render_target,
                     *right_index,
                     right_transform,

@@ -91,7 +91,7 @@ fn create_vr_context() -> VerboseResult<Arc<Context>> {
 }
 
 fn create_desktop_context(enable_vsync: bool) -> VerboseResult<Arc<Context>> {
-    let mut context_builder = Context::new()
+    let context_builder = Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
             debugging: false,
             renderdoc: false,
@@ -106,11 +106,12 @@ fn create_desktop_context(enable_vsync: bool) -> VerboseResult<Arc<Context>> {
             fullscreen: false,
             requested_display: None,
         })
+        .set_render_core_info(
+            VK_FORMAT_R8G8B8A8_SRGB,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+            enable_vsync,
+        )
         .enable_keyboard();
-
-    if enable_vsync {
-        context_builder = context_builder.enable_vsync();
-    }
 
     context_builder.build()
 }
