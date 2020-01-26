@@ -20,15 +20,12 @@ const int MAX_ITERATION = 50;
 layout(location = 0) rayPayloadNV RayPayload pay_load;
 layout(location = 1) rayPayloadNV vec4 global_origin;
 
-vec4 blending(vec4 source, vec4 destination) {
-    // color = (source_color * source_factor) op (destination_color * destination_factor)
+vec4 blending(vec4 current, vec4 new) {
+    float current_factor = current.w;
+    float new_factor = (1.0 - current.w);
 
-    float source_factor = source.w;
-    // float source_factor = 1.0;
-    float destination_factor = (1.0 - source.w);
-
-    vec3 color = (source.xyz * source_factor) + (destination.xyz * destination_factor);
-    float alpha = source.w;
+    vec3 color = (current.xyz * current_factor) + (new.xyz * new_factor);
+    float alpha = new.w;
 
     return vec4(color, alpha);
 }
@@ -42,7 +39,7 @@ void main() {
     vec4 target = view.inv_proj * vec4(d.x, d.y, 1.0, 1.0);
     vec4 direction = view.inv_view * vec4(normalize(target.xyz), 0.0);
 
-    vec4 color = imageLoad(output_image, ivec2(gl_LaunchIDNV.xy));
+    vec4 color = vec4(0.0);
 
     uint ray_flags = gl_RayFlagsOpaqueNV;
     uint cull_mask = 0xff;
@@ -83,7 +80,7 @@ void main() {
 
         // vec4 cos_color = vec4(pay_load.color.xyz, pay_load.color.w * pay_load.cos);
 
-        color = blending(pay_load.color, color);
+        color = blending(color, pay_load.color);
 
         // break if color almost fully opaque
         if (color.w >= 0.97) {
@@ -95,9 +92,9 @@ void main() {
     }
 
     // set background color if we didn't hit anything
-    // if (color == vec4(0.0)) {
-    //     color = vec4(0.3, 0.3, 0.3, 1.0);
-    // }
+    if (color == vec4(0.0)) {
+        color = imageLoad(output_image, ivec2(gl_LaunchIDNV.xy));
+    }
 
     imageStore(output_image, ivec2(gl_LaunchIDNV.xy), color);
 }
