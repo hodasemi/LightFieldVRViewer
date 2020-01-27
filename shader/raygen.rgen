@@ -25,7 +25,7 @@ vec4 blending(vec4 current, vec4 new) {
     float new_factor = (1.0 - current.w);
 
     vec3 color = (current.xyz * current_factor) + (new.xyz * new_factor);
-    float alpha = new.w;
+    float alpha = current.w + (1.0 - current.w) * new.w;
 
     return vec4(color, alpha);
 }
