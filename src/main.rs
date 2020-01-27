@@ -88,7 +88,7 @@ fn create_vr_context() -> VerboseResult<Arc<Context>> {
         })
         .set_vr_mode(VRMode::OpenVR)
         .set_render_core_info(
-            VK_FORMAT_R8G8B8A8_SRGB,
+            VK_FORMAT_R8G8B8A8_UNORM,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
             true,
         )
