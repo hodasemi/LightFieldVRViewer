@@ -13,6 +13,7 @@ pub struct LightFieldData {
     data: Vec<Plane>,
 
     pub frustum: LightFieldFrustum,
+    pub direction: Vector3<f32>,
 
     // (start, end) of 4 lines
     pub frustum_edges: [(Vector3<f32>, Vector3<f32>); 4],
@@ -279,6 +280,8 @@ impl LightFieldData {
             data: planes,
 
             frustum,
+
+            direction: left_top_frustum.main_direction,
 
             frustum_edges,
         })

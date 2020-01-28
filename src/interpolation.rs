@@ -2,14 +2,16 @@ use cgmath::{vec2, vec4, InnerSpace, Matrix4, Vector2, Vector3, Vector4, Zero};
 use context::prelude::*;
 
 use super::light_field::light_field_data::LightFieldFrustum;
-use super::light_field_viewer::{PlaneImageInfo, PlaneInfo};
+use super::light_field_viewer::{PlaneImageInfo, PlaneInfo, DEFAULT_FORWARD};
 
 use std::f32;
+use std::iter::IntoIterator;
 use std::ops::IndexMut;
 use std::sync::{Arc, Mutex};
 
 struct LightField {
     frustum: LightFieldFrustum,
+    direction: Vector3<f32>,
 
     planes: Vec<Plane>,
 }
@@ -20,6 +22,7 @@ impl LightField {
         command_buffer: &Arc<CommandBuffer>,
         data: impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
         frustum: LightFieldFrustum,
+        direction: Vector3<f32>,
     ) -> VerboseResult<Self> {
         let mut planes = Vec::new();
 
@@ -33,7 +36,11 @@ impl LightField {
             )?);
         }
 
-        Ok(LightField { frustum, planes })
+        Ok(LightField {
+            frustum,
+            planes,
+            direction,
+        })
     }
 }
 
@@ -87,13 +94,20 @@ impl CPUInterpolation {
         interpolation_infos: Vec<(
             impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
             LightFieldFrustum,
+            Vector3<f32>,
         )>,
         mode: TargetMode<T>,
     ) -> VerboseResult<Self> {
         let mut light_fields = Vec::with_capacity(interpolation_infos.len());
 
-        for (data, frustum) in interpolation_infos.into_iter() {
-            light_fields.push(LightField::new(queue, command_buffer, data, frustum)?);
+        for (data, frustum, direction) in interpolation_infos.into_iter() {
+            light_fields.push(LightField::new(
+                queue,
+                command_buffer,
+                data,
+                frustum,
+                direction,
+            )?);
         }
 
         let last_position = match mode {
@@ -159,6 +173,7 @@ impl<'a> Interpolation<'a> {
         command_buffer: &Arc<CommandBuffer>,
         context: &Context,
         inv_view: Matrix4<f32>,
+        inv_proj: Matrix4<f32>,
         mut plane_infos: impl IndexMut<usize, Output = PlaneInfo>,
     ) -> VerboseResult<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>> {
         let my_position = (inv_view * vec4(0.0, 0.0, 0.0, 1.0)).truncate();
@@ -171,10 +186,13 @@ impl<'a> Interpolation<'a> {
 
         *last_position = my_position;
 
-        let mut blasses = Vec::new();
-        let mut i = 0;
+        let direction = inv_view * (inv_proj * DEFAULT_FORWARD.extend(1.0)).xyz().extend(1.0);
 
-        for light_field in self.light_fields.iter() {
+        let light_fields = self.gather_light_fields(my_position, direction.xyz().normalize());
+
+        let mut blasses = Vec::new();
+
+        for (light_field_weight, light_field) in light_fields.iter() {
             let viewer_is_inside = light_field.frustum.check(my_position);
 
             if !viewer_is_inside {
@@ -309,7 +327,8 @@ impl<'a> Interpolation<'a> {
                         }
                     };
 
-                    plane_infos[i] = plane.info.clone(indices, bary);
+                    plane_infos[blasses.len()] =
+                        plane.info.clone(indices, bary, *light_field_weight);
 
                     let blas = AccelerationStructure::bottom_level()
                         .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
@@ -319,14 +338,12 @@ impl<'a> Interpolation<'a> {
                     blas.generate(command_buffer)?;
 
                     blasses.push(blas);
-
-                    i += 1;
                 }
             }
         }
 
         // return if haven't added any geometry to the blas
-        if i == 0 {
+        if blasses.is_empty() {
             *self.last_result.lock()? = None;
             return Ok(None);
         }
@@ -345,6 +362,60 @@ impl<'a> Interpolation<'a> {
         *self.last_result.lock()? = Some((blasses.clone(), tlas.clone()));
 
         Ok(Some((blasses, tlas)))
+    }
+
+    #[inline]
+    fn gather_light_fields(
+        &self,
+        position: Vector3<f32>,
+        direction: Vector3<f32>,
+    ) -> Vec<(f32, &LightField)> {
+        let mut inside_frustum = Vec::new();
+
+        // look for light fields where we are inside of
+        for light_field in self.light_fields.iter() {
+            if light_field.frustum.check(position) {
+                inside_frustum.push(light_field);
+            }
+        }
+
+        if inside_frustum.is_empty() {
+            let sorted_fields = Self::sort_by_angle(self.light_fields, direction);
+            Self::select_and_weight(&sorted_fields)
+        } else if inside_frustum.len() == 1 {
+            inside_frustum
+                .iter()
+                .map(|light_field| (1.0, *light_field))
+                .collect()
+        } else {
+            let sorted_fields = Self::sort_by_angle(inside_frustum, direction);
+            Self::select_and_weight(&sorted_fields)
+        }
+    }
+
+    #[inline]
+    fn select_and_weight<'c>(light_fields: &[(f32, &'c LightField)]) -> Vec<(f32, &'c LightField)> {
+        todo!()
+    }
+
+    #[inline]
+    fn sort_by_angle<'c>(
+        light_fields: impl IntoIterator<Item = &'c LightField>,
+        direction: Vector3<f32>,
+    ) -> Vec<(f32, &'c LightField)> {
+        let mut fields = Vec::new();
+
+        for light_field in light_fields.into_iter() {
+            fields.push((direction.dot(light_field.direction), light_field));
+        }
+
+        fields.sort_by(|(left_angle, _), (right_angle, _)| {
+            left_angle
+                .partial_cmp(right_angle)
+                .expect("failed comparing floats")
+        });
+
+        fields
     }
 
     /// https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection#Algebraic_form

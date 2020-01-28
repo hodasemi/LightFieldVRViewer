@@ -30,7 +30,7 @@ pub struct CameraFrustum {
     pub right_top: Line,
     pub right_bottom: Line,
 
-    main_direction: Vector3<f32>,
+    pub main_direction: Vector3<f32>,
 }
 
 unsafe impl Sync for CameraFrustum {}

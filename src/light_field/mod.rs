@@ -193,6 +193,10 @@ impl LightField {
         self.light_field_data.frustum_edges
     }
 
+    pub fn direction(&self) -> Vector3<f32> {
+        self.light_field_data.direction
+    }
+
     pub fn into_data(self) -> Vec<Plane> {
         self.light_field_data.into_data()
     }

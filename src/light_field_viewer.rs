@@ -7,7 +7,7 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
+use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, Vector2, Vector3, Vector4};
 
 use super::{
     feet_renderer::FeetRenderer,
@@ -265,14 +265,14 @@ impl TScene for LightFieldViewer {
                     transform,
                 )?;
 
+                let inverted_transform = transform.invert()?;
+
                 if let Some((blasses, tlas)) = Self::update_plane_buffer(
                     command_buffer,
                     &self.context,
                     plane_buffer,
-                    transform
-                        .view
-                        .invert()
-                        .ok_or("failed inverting simulation view")?,
+                    inverted_transform.view,
+                    inverted_transform.proj,
                     interpolation,
                 )? {
                     as_descriptor.update(&[DescriptorWrite::acceleration_structures(0, &[&tlas])]);
@@ -327,14 +327,15 @@ impl TScene for LightFieldViewer {
                     right_transform,
                 )?;
 
+                let (inverted_left_transform, inverted_right_transform) =
+                    (left_transform.invert()?, right_transform.invert()?);
+
                 if let Some((left_blasses, left_tlas)) = Self::update_plane_buffer(
                     command_buffer,
                     &self.context,
                     left_plane_buffer,
-                    left_transform
-                        .view
-                        .invert()
-                        .ok_or("failed inverting left view")?,
+                    inverted_left_transform.view,
+                    inverted_left_transform.proj,
                     left_interpolation,
                 )? {
                     left_as_descriptor
@@ -356,10 +357,8 @@ impl TScene for LightFieldViewer {
                     command_buffer,
                     &self.context,
                     right_plane_buffer,
-                    right_transform
-                        .view
-                        .invert()
-                        .ok_or("failed inverting right view")?,
+                    inverted_right_transform.view,
+                    inverted_right_transform.proj,
                     right_interpolation,
                 )? {
                     right_as_descriptor
@@ -604,12 +603,14 @@ impl LightFieldViewer {
         context: &Arc<Context>,
         plane_buffer: &Arc<Buffer<PlaneInfo>>,
         inverted_view: Matrix4<f32>,
+        inverted_proj: Matrix4<f32>,
         interpolation: &Interpolation<'_>,
     ) -> VerboseResult<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>> {
         interpolation.calculate_interpolation(
             command_buffer,
             context,
             inverted_view,
+            inverted_proj,
             plane_buffer.map_complete()?,
         )
     }
@@ -671,6 +672,7 @@ impl LightFieldViewer {
 
         for light_field in light_fields.into_iter() {
             let frustum = light_field.frustum();
+            let direction = light_field.direction();
             let planes = light_field.into_data();
 
             let mut inner_planes = Vec::with_capacity(planes.len());
@@ -722,7 +724,7 @@ impl LightFieldViewer {
                 inner_planes.push((plane_info, vertices, image_infos));
             }
 
-            light_field_infos.push((inner_planes, frustum));
+            light_field_infos.push((inner_planes, frustum, direction));
         }
 
         // --- create plane info buffer ---
@@ -787,7 +789,7 @@ pub struct PlaneInfo {
 }
 
 impl PlaneInfo {
-    pub fn clone(&self, indices: Vector4<i32>, bary: Vector2<f32>) -> Self {
+    pub fn clone(&self, indices: Vector4<i32>, bary: Vector2<f32>, weight: f32) -> Self {
         PlaneInfo {
             top_left: self.top_left,
             top_right: self.top_right,
@@ -797,7 +799,7 @@ impl PlaneInfo {
             normal: self.normal,
 
             indices,
-            bary: bary.extend(0.0).extend(0.0),
+            bary: bary.extend(weight).extend(0.0),
         }
     }
 }
