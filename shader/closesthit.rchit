@@ -26,6 +26,7 @@ struct RayPayload {
 	vec4 color;
 	float distance;
     float cos;
+    float factor;
 };
 
 layout(location = 0) rayPayloadInNV RayPayload pay_load;
@@ -117,6 +118,7 @@ void main() {
 
     pay_load.distance = 0.0;
     pay_load.color = vec4(0.0);
+    pay_load.factor = plane.bary.z;
 
     float angle = dot(-plane.normal.xyz, gl_WorldRayDirectionNV);
     pay_load.cos = angle;

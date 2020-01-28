@@ -187,18 +187,11 @@ impl<'a> Interpolation<'a> {
         *last_position = my_position;
 
         let direction = inv_view * (inv_proj * DEFAULT_FORWARD.extend(1.0)).xyz().extend(1.0);
-
         let light_fields = self.gather_light_fields(my_position, direction.xyz().normalize());
 
         let mut blasses = Vec::new();
 
         for (light_field_weight, light_field) in light_fields.iter() {
-            let viewer_is_inside = light_field.frustum.check(my_position);
-
-            if !viewer_is_inside {
-                continue;
-            }
-
             for plane in light_field.planes.iter() {
                 if let Some(viewer_point) = Self::plane_line_intersection(
                     &plane,
@@ -208,7 +201,7 @@ impl<'a> Interpolation<'a> {
                     let viewer_barycentric = Self::calculate_barycentrics(&plane, viewer_point);
 
                     /*
-                                        |                   |
+                                            |                   |
                         Above, Left Side    |       Above       |   Above, Right Side
                                             |                   |
                     ------------------------X-------------------------------------------
@@ -395,7 +388,15 @@ impl<'a> Interpolation<'a> {
 
     #[inline]
     fn select_and_weight<'c>(light_fields: &[(f32, &'c LightField)]) -> Vec<(f32, &'c LightField)> {
-        todo!()
+        let (first_angle, first_light_field) = light_fields[0];
+        let (second_angle, second_light_field) = light_fields[1];
+
+        let total = first_angle + second_angle;
+
+        vec![
+            (second_angle / total, first_light_field),
+            (first_angle / total, second_light_field),
+        ]
     }
 
     #[inline]
