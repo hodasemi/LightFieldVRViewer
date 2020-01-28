@@ -13,6 +13,9 @@ use super::{
 pub struct FeetRenderer {
     rasterizer: RwLock<Rasterizer>,
 
+    enable_feet: bool,
+    enable_frustum: bool,
+
     // feet
     _feet: Arc<Image>,
     feet_descriptor_set: Arc<DescriptorSet>,
@@ -23,7 +26,12 @@ pub struct FeetRenderer {
 }
 
 impl FeetRenderer {
-    pub fn new(context: &Arc<Context>, light_fields: &[LightField]) -> VerboseResult<Self> {
+    pub fn new(
+        context: &Arc<Context>,
+        light_fields: &[LightField],
+        enable_feet: bool,
+        enable_frustum: bool,
+    ) -> VerboseResult<Self> {
         let feet_image = Image::from_file("feet.png")?
             .nearest_sampler()
             .build(context.device(), context.queue())?;
@@ -152,6 +160,9 @@ impl FeetRenderer {
         Ok(FeetRenderer {
             rasterizer: RwLock::new(Rasterizer::new(context)?),
 
+            enable_feet,
+            enable_frustum,
+
             _feet: feet_image,
             feet_descriptor_set: descriptor_set,
             feet_vertex_buffer: feet_gpu_vertex_buffer,
@@ -169,21 +180,28 @@ impl FeetRenderer {
         index: usize,
         transforms: VRTransformations,
     ) -> VerboseResult<()> {
-        render_target.begin(command_buffer, VK_SUBPASS_CONTENTS_INLINE, index);
+        if self.enable_frustum || self.enable_feet {
+            render_target.begin(command_buffer, VK_SUBPASS_CONTENTS_INLINE, index);
 
-        // render outlines
-        command_buffer.bind_pipeline(line_pipeline)?;
-        command_buffer.bind_vertex_buffer(&self.frustum_vertex_buffer);
-        command_buffer.draw_complete_single_instance(self.frustum_vertex_buffer.size() as u32);
+            // render outlines
+            if self.enable_frustum {
+                command_buffer.bind_pipeline(line_pipeline)?;
+                command_buffer.bind_vertex_buffer(&self.frustum_vertex_buffer);
+                command_buffer
+                    .draw_complete_single_instance(self.frustum_vertex_buffer.size() as u32);
+            }
 
-        // render feet
-        command_buffer.bind_pipeline(triangle_pipeline)?;
-        command_buffer.bind_descriptor_sets_minimal(&[&self.feet_descriptor_set])?;
-        command_buffer.push_constants(VK_SHADER_STAGE_VERTEX_BIT, &transforms)?;
-        command_buffer.bind_vertex_buffer(&self.feet_vertex_buffer);
-        command_buffer.draw_complete_single_instance(self.feet_vertex_buffer.size() as u32);
+            // render feet
+            if self.enable_feet {
+                command_buffer.bind_pipeline(triangle_pipeline)?;
+                command_buffer.bind_descriptor_sets_minimal(&[&self.feet_descriptor_set])?;
+                command_buffer.push_constants(VK_SHADER_STAGE_VERTEX_BIT, &transforms)?;
+                command_buffer.bind_vertex_buffer(&self.feet_vertex_buffer);
+                command_buffer.draw_complete_single_instance(self.feet_vertex_buffer.size() as u32);
+            }
 
-        render_target.end(command_buffer);
+            render_target.end(command_buffer);
+        }
 
         Ok(())
     }

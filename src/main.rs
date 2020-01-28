@@ -63,6 +63,8 @@ fn main() -> VerboseResult<()> {
         light_fields,
         viewer_config.rotation_speed,
         viewer_config.movement_speed,
+        viewer_config.enable_feet,
+        viewer_config.enable_frustum,
     )?;
 
     println!("created viewer!");
@@ -128,6 +130,8 @@ const MOVEMENT_SPEED: &str = "movement_speed";
 const ROTATION_SPEED: &str = "rotation_speed";
 const VSYNC: &str = "enable_vsync";
 const LIGHT_FIELDS: &str = "light_fields";
+const ENABLE_FEET: &str = "enable_feet";
+const ENABLE_FRUSTUM: &str = "enable_frustum";
 
 struct VrViewerConfig {
     // in meter per second
@@ -140,6 +144,8 @@ struct VrViewerConfig {
     enable_vsync: bool,
 
     light_fields: Vec<String>,
+    enable_feet: bool,
+    enable_frustum: bool,
 }
 
 impl VrViewerConfig {
@@ -166,6 +172,14 @@ impl VrViewerConfig {
             if let Some(value) = info.get(LIGHT_FIELDS) {
                 config.light_fields = value.to_array()?;
             }
+
+            if let Some(value) = info.get(ENABLE_FEET) {
+                config.enable_feet = value.to_value()?;
+            }
+
+            if let Some(value) = info.get(ENABLE_FRUSTUM) {
+                config.enable_frustum = value.to_value()?;
+            }
         }
 
         Ok(config)
@@ -179,6 +193,8 @@ impl Default for VrViewerConfig {
             rotation_speed: Deg(30.0),
             enable_vsync: true,
             light_fields: Vec::new(),
+            enable_frustum: true,
+            enable_feet: true,
         }
     }
 }

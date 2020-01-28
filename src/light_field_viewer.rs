@@ -52,8 +52,10 @@ impl LightFieldViewer {
         light_fields: Vec<LightField>,
         turn_speed: Deg<f32>,
         movement_speed: f32,
+        enable_feet: bool,
+        enable_frustum: bool,
     ) -> VerboseResult<Arc<Self>> {
-        let feet_renderer = FeetRenderer::new(context, &light_fields)?;
+        let feet_renderer = FeetRenderer::new(context, &light_fields, enable_feet, enable_frustum)?;
 
         let (plane_buffer, images, interpolation) = Self::create_scene_data(context, light_fields)?;
 
