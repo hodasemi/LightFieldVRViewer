@@ -11,7 +11,7 @@ use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, SquareMatrix, Vector2, Vector
 
 use super::{
     feet_renderer::FeetRenderer,
-    interpolation::CPUInterpolation,
+    interpolation::{CPUInterpolation, Interpolation},
     light_field::{light_field_data::PlaneImageRatios, LightField},
     view_emulator::ViewEmulator,
 };
@@ -240,6 +240,7 @@ impl TScene for LightFieldViewer {
             rasterizer.line_pipelines(),
             rasterizer.render_targets(),
             &self.plane_buffer,
+            &self.interpolation.interpolation(),
         ) {
             (
                 TargetMode::Single(index),
@@ -251,6 +252,7 @@ impl TScene for LightFieldViewer {
                 TargetMode::Single(line_pipeline),
                 TargetMode::Single(feet_render_target),
                 TargetMode::Single(plane_buffer),
+                TargetMode::Single(interpolation),
             ) => {
                 let transform = self.view_emulator.lock()?.simulation_transform();
 
@@ -271,7 +273,7 @@ impl TScene for LightFieldViewer {
                         .view
                         .invert()
                         .ok_or("failed inverting simulation view")?,
-                    &self.interpolation,
+                    interpolation,
                 )? {
                     as_descriptor.update(&[DescriptorWrite::acceleration_structures(0, &[&tlas])]);
 
@@ -298,6 +300,7 @@ impl TScene for LightFieldViewer {
                 TargetMode::Stereo(left_line_pipeline, right_line_pipeline),
                 TargetMode::Stereo(left_feet_render_target, right_feet_render_target),
                 TargetMode::Stereo(left_plane_buffer, right_plane_buffer),
+                TargetMode::Stereo(left_interpolation, right_interpolation),
             ) => {
                 let (left_transform, right_transform) = self
                     .context
@@ -332,7 +335,7 @@ impl TScene for LightFieldViewer {
                         .view
                         .invert()
                         .ok_or("failed inverting left view")?,
-                    &self.interpolation,
+                    left_interpolation,
                 )? {
                     left_as_descriptor
                         .update(&[DescriptorWrite::acceleration_structures(0, &[&left_tlas])]);
@@ -357,7 +360,7 @@ impl TScene for LightFieldViewer {
                         .view
                         .invert()
                         .ok_or("failed inverting right view")?,
-                    &self.interpolation,
+                    right_interpolation,
                 )? {
                     right_as_descriptor
                         .update(&[DescriptorWrite::acceleration_structures(0, &[&right_tlas])]);
@@ -601,7 +604,7 @@ impl LightFieldViewer {
         context: &Arc<Context>,
         plane_buffer: &Arc<Buffer<PlaneInfo>>,
         inverted_view: Matrix4<f32>,
-        interpolation: &CPUInterpolation,
+        interpolation: &Interpolation<'_>,
     ) -> VerboseResult<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>> {
         interpolation.calculate_interpolation(
             command_buffer,
@@ -759,8 +762,12 @@ impl LightFieldViewer {
 
         let command_buffer = context.render_core().allocate_primary_buffer()?;
 
-        let interpolation =
-            CPUInterpolation::new(context.queue(), &command_buffer, light_field_infos)?;
+        let interpolation = CPUInterpolation::new(
+            context.queue(),
+            &command_buffer,
+            light_field_infos,
+            context.render_core().images()?,
+        )?;
 
         Ok((plane_buffer, images, interpolation))
     }

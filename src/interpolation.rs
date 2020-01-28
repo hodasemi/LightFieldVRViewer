@@ -74,19 +74,21 @@ impl Plane {
 pub struct CPUInterpolation {
     light_fields: Vec<LightField>,
 
-    last_position: Mutex<Vector3<f32>>,
+    last_position: TargetMode<Mutex<Vector3<f32>>>,
 
-    last_result: Mutex<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>>,
+    last_result:
+        TargetMode<Mutex<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>>>,
 }
 
 impl CPUInterpolation {
-    pub fn new(
+    pub fn new<T>(
         queue: &Arc<Mutex<Queue>>,
         command_buffer: &Arc<CommandBuffer>,
         interpolation_infos: Vec<(
             impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
             LightFieldFrustum,
         )>,
+        mode: TargetMode<T>,
     ) -> VerboseResult<Self> {
         let mut light_fields = Vec::with_capacity(interpolation_infos.len());
 
@@ -94,13 +96,64 @@ impl CPUInterpolation {
             light_fields.push(LightField::new(queue, command_buffer, data, frustum)?);
         }
 
+        let last_position = match mode {
+            TargetMode::Single(_) => {
+                TargetMode::Single(Mutex::new(Vector3::new(f32::MAX, f32::MAX, f32::MAX)))
+            }
+            TargetMode::Stereo(_, _) => TargetMode::Stereo(
+                Mutex::new(Vector3::new(f32::MAX, f32::MAX, f32::MAX)),
+                Mutex::new(Vector3::new(f32::MAX, f32::MAX, f32::MAX)),
+            ),
+        };
+
+        let last_result = match mode {
+            TargetMode::Single(_) => TargetMode::Single(Mutex::new(None)),
+            TargetMode::Stereo(_, _) => TargetMode::Stereo(Mutex::new(None), Mutex::new(None)),
+        };
+
         Ok(CPUInterpolation {
             light_fields,
-            last_position: Mutex::new(Vector3::new(f32::MAX, f32::MAX, f32::MAX)),
-            last_result: Mutex::new(None),
+            last_position,
+            last_result,
         })
     }
 
+    pub fn interpolation(&self) -> TargetMode<Interpolation<'_>> {
+        match (&self.last_position, &self.last_result) {
+            (TargetMode::Single(last_position), TargetMode::Single(last_result)) => {
+                TargetMode::Single(Interpolation {
+                    light_fields: &self.light_fields,
+                    last_position: last_position,
+                    last_result: last_result,
+                })
+            }
+            (
+                TargetMode::Stereo(left_last_position, right_last_position),
+                TargetMode::Stereo(left_last_result, right_last_result),
+            ) => TargetMode::Stereo(
+                Interpolation {
+                    light_fields: &self.light_fields,
+                    last_position: left_last_position,
+                    last_result: left_last_result,
+                },
+                Interpolation {
+                    light_fields: &self.light_fields,
+                    last_position: right_last_position,
+                    last_result: right_last_result,
+                },
+            ),
+            _ => unreachable!(),
+        }
+    }
+}
+
+pub struct Interpolation<'a> {
+    light_fields: &'a [LightField],
+    last_position: &'a Mutex<Vector3<f32>>,
+    last_result: &'a Mutex<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>>,
+}
+
+impl<'a> Interpolation<'a> {
     pub fn calculate_interpolation(
         &self,
         command_buffer: &Arc<CommandBuffer>,
@@ -109,6 +162,7 @@ impl CPUInterpolation {
         mut plane_infos: impl IndexMut<usize, Output = PlaneInfo>,
     ) -> VerboseResult<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>> {
         let my_position = (inv_view * vec4(0.0, 0.0, 0.0, 1.0)).truncate();
+
         let mut last_position = self.last_position.lock()?;
 
         if Self::check_pos(*last_position, my_position) {
