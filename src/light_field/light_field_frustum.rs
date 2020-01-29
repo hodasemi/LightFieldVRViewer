@@ -1,5 +1,3 @@
-// #![allow(unused)]
-
 use context::prelude::*;
 
 use cgmath::{InnerSpace, Vector3};

@@ -212,19 +212,23 @@ impl LightFieldData {
             // the length of every side in total = the length of the side of a camera + baseline * (cameras - 1)
 
             let total_width = (left_top - right_top).magnitude();
+            let total_height = (left_top - left_bottom).magnitude();
 
-            let (frustum_width, _) = Self::frustum_extents_at_depth(left_top_frustum, layer_depth);
+            let (frustum_width, frustum_height) =
+                Self::frustum_extents_at_depth(left_top_frustum, layer_depth);
 
-            let base_line_ratio = baseline / total_width;
+            let horizontal_base_line_ratio = baseline / total_width;
+            let vertical_base_line_ratio = baseline / total_height;
             let width_ratio = frustum_width / total_width;
+            let height_ration = frustum_height / total_height;
 
             let mut image_locations = Vec::new();
 
             for image in disparity_plane.images.into_iter() {
-                let left_ratio = base_line_ratio * image.frustum.0 as f32;
+                let left_ratio = horizontal_base_line_ratio * image.frustum.0 as f32;
                 let right_ratio = left_ratio + width_ratio;
-                let top_ratio = base_line_ratio * image.frustum.1 as f32;
-                let bottom_ratio = top_ratio + width_ratio;
+                let top_ratio = vertical_base_line_ratio * image.frustum.1 as f32;
+                let bottom_ratio = top_ratio + height_ration;
 
                 let ratios = PlaneImageRatios {
                     left: left_ratio,

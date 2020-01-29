@@ -1,7 +1,6 @@
 mod alpha_maps;
 pub mod light_field_data;
 pub mod light_field_frustum;
-// mod ranges;
 
 use context::prelude::*;
 use image::{ImageBuffer, Pixel, Rgba};
