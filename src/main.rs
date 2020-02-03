@@ -18,17 +18,7 @@ use std::thread;
 fn main() -> VerboseResult<()> {
     let viewer_config = VrViewerConfig::load("settings.conf")?;
 
-    let context = match create_vr_context() {
-        Ok(context) => context,
-        Err(msg) => {
-            println!("{:?}", msg);
-            println!("failed creating VR Context");
-
-            create_desktop_context(viewer_config.enable_vsync)?
-        }
-    };
-
-    // let context = create_desktop_context(viewer_config.enable_vsync)?;
+    let context = create_context(viewer_config.force_desktop, viewer_config.enable_vsync)?;
 
     // spawn threads to load light fields
     let join_handles: Vec<thread::JoinHandle<VerboseResult<LightField>>> = viewer_config
@@ -79,10 +69,26 @@ fn main() -> VerboseResult<()> {
     Ok(())
 }
 
+fn create_context(force_desktop: bool, enable_vsync: bool) -> VerboseResult<Arc<Context>> {
+    if force_desktop {
+        create_desktop_context(enable_vsync)
+    } else {
+        match create_vr_context() {
+            Ok(context) => Ok(context),
+            Err(msg) => {
+                println!("{:?}", msg);
+                println!("failed creating VR Context");
+
+                create_desktop_context(enable_vsync)
+            }
+        }
+    }
+}
+
 fn create_vr_context() -> VerboseResult<Arc<Context>> {
     Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
-            debugging: false,
+            debugging: true,
             renderdoc: false,
             steam_layer: false,
             use_util: false,
@@ -132,6 +138,7 @@ const VSYNC: &str = "enable_vsync";
 const LIGHT_FIELDS: &str = "light_fields";
 const ENABLE_FEET: &str = "enable_feet";
 const ENABLE_FRUSTUM: &str = "enable_frustum";
+const FORCE_DESKTOP: &str = "force";
 
 struct VrViewerConfig {
     // in meter per second
@@ -146,6 +153,7 @@ struct VrViewerConfig {
     light_fields: Vec<String>,
     enable_feet: bool,
     enable_frustum: bool,
+    force_desktop: bool,
 }
 
 impl VrViewerConfig {
@@ -165,6 +173,10 @@ impl VrViewerConfig {
 
             if let Some(value) = info.get(VSYNC) {
                 config.enable_vsync = value.to_value()?;
+            }
+
+            if let Some(value) = info.get(FORCE_DESKTOP) {
+                config.force_desktop = value.to_value()?;
             }
         }
 
@@ -195,6 +207,7 @@ impl Default for VrViewerConfig {
             light_fields: Vec::new(),
             enable_frustum: true,
             enable_feet: true,
+            force_desktop: false,
         }
     }
 }

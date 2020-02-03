@@ -764,12 +764,27 @@ impl LightFieldViewer {
 
         let command_buffer = context.render_core().allocate_primary_buffer()?;
 
+        command_buffer.begin(VkCommandBufferBeginInfo::new(
+            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        ))?;
+
         let interpolation = CPUInterpolation::new(
-            context.queue(),
             &command_buffer,
             light_field_infos,
             context.render_core().images()?,
         )?;
+
+        command_buffer.end()?;
+
+        let submit = SubmitInfo::default().add_command_buffer(command_buffer);
+        let fence = Fence::builder().build(context.device().clone())?;
+
+        let queue_lock = context.queue().lock()?;
+        queue_lock.submit(Some(&fence), &[submit])?;
+
+        context
+            .device()
+            .wait_for_fences(&[&fence], true, 1_000_000_000)?;
 
         Ok((plane_buffer, images, interpolation))
     }

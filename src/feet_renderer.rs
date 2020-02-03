@@ -116,7 +116,7 @@ impl FeetRenderer {
 
             let color = vec4(red, green, blue, 1.0);
 
-            for (start, end) in frustum_edges.into_iter() {
+            for (start, end) in frustum_edges.iter() {
                 outline_vertex_data.push(ColoredVertex {
                     position: *start,
                     color,
@@ -151,11 +151,27 @@ impl FeetRenderer {
 
         let command_buffer = context.render_core().allocate_primary_buffer()?;
 
+        command_buffer.begin(VkCommandBufferBeginInfo::new(
+            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        ))?;
+
         let feet_gpu_vertex_buffer =
-            Buffer::into_device_local(feet_cpu_vertex_buffer, &command_buffer, context.queue())?;
+            Buffer::into_device_local(feet_cpu_vertex_buffer, &command_buffer)?;
 
         let outline_cpu_vertex_buffer =
-            Buffer::into_device_local(outline_cpu_vertex_buffer, &command_buffer, context.queue())?;
+            Buffer::into_device_local(outline_cpu_vertex_buffer, &command_buffer)?;
+
+        command_buffer.end()?;
+
+        let submit = SubmitInfo::default().add_command_buffer(command_buffer);
+        let fence = Fence::builder().build(context.device().clone())?;
+
+        let queue_lock = context.queue().lock()?;
+        queue_lock.submit(Some(&fence), &[submit])?;
+
+        context
+            .device()
+            .wait_for_fences(&[&fence], true, 1_000_000_000)?;
 
         Ok(FeetRenderer {
             rasterizer: RwLock::new(Rasterizer::new(context)?),

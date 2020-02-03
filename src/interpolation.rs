@@ -18,7 +18,6 @@ struct LightField {
 
 impl LightField {
     pub fn new(
-        queue: &Arc<Mutex<Queue>>,
         command_buffer: &Arc<CommandBuffer>,
         data: impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
         frustum: LightFieldFrustum,
@@ -28,7 +27,6 @@ impl LightField {
 
         for (plane_info, vertices, image_infos) in data.into_iter() {
             planes.push(Plane::new(
-                queue,
                 command_buffer,
                 plane_info,
                 image_infos,
@@ -47,12 +45,12 @@ impl LightField {
 struct Plane {
     info: PlaneInfo,
     image_infos: Vec<PlaneImageInfo>,
-    vertex_buffer: Arc<Buffer<Vector3<f32>>>,
+    _vertex_buffer: Arc<Buffer<Vector3<f32>>>,
+    blas: Arc<AccelerationStructure>,
 }
 
 impl Plane {
     fn new(
-        queue: &Arc<Mutex<Queue>>,
         command_buffer: &Arc<CommandBuffer>,
         plane_info: PlaneInfo,
         image_infos: Vec<PlaneImageInfo>,
@@ -68,12 +66,19 @@ impl Plane {
             .set_data(&vertices)
             .build(command_buffer.device().clone())?;
 
-        let gpu_buffer = Buffer::into_device_local(cpu_buffer, command_buffer, queue)?;
+        let gpu_buffer = Buffer::into_device_local(cpu_buffer, command_buffer)?;
+
+        let blas = AccelerationStructure::bottom_level()
+            .add_vertices(&gpu_buffer, None)
+            .build(command_buffer.device().clone())?;
+
+        blas.generate(command_buffer)?;
 
         Ok(Plane {
             info: plane_info,
             image_infos,
-            vertex_buffer: gpu_buffer,
+            _vertex_buffer: gpu_buffer,
+            blas,
         })
     }
 }
@@ -89,7 +94,6 @@ pub struct CPUInterpolation {
 
 impl CPUInterpolation {
     pub fn new<T>(
-        queue: &Arc<Mutex<Queue>>,
         command_buffer: &Arc<CommandBuffer>,
         interpolation_infos: Vec<(
             impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
@@ -101,13 +105,7 @@ impl CPUInterpolation {
         let mut light_fields = Vec::with_capacity(interpolation_infos.len());
 
         for (data, frustum, direction) in interpolation_infos.into_iter() {
-            light_fields.push(LightField::new(
-                queue,
-                command_buffer,
-                data,
-                frustum,
-                direction,
-            )?);
+            light_fields.push(LightField::new(command_buffer, data, frustum, direction)?);
         }
 
         let last_position = match mode {
@@ -323,14 +321,7 @@ impl<'a> Interpolation<'a> {
                     plane_infos[blasses.len()] =
                         plane.info.clone(indices, bary, *light_field_weight);
 
-                    let blas = AccelerationStructure::bottom_level()
-                        .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
-                        .add_vertices(&plane.vertex_buffer, None)
-                        .build(context.device().clone())?;
-
-                    blas.generate(command_buffer)?;
-
-                    blasses.push(blas);
+                    blasses.push(plane.blas.clone());
                 }
             }
         }
