@@ -155,11 +155,19 @@ impl FeetRenderer {
             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         ))?;
 
-        let feet_gpu_vertex_buffer =
-            Buffer::into_device_local(feet_cpu_vertex_buffer, &command_buffer)?;
+        let feet_gpu_vertex_buffer = Buffer::into_device_local(
+            feet_cpu_vertex_buffer,
+            &command_buffer,
+            VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+        )?;
 
-        let outline_cpu_vertex_buffer =
-            Buffer::into_device_local(outline_cpu_vertex_buffer, &command_buffer)?;
+        let outline_cpu_vertex_buffer = Buffer::into_device_local(
+            outline_cpu_vertex_buffer,
+            &command_buffer,
+            VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+        )?;
 
         command_buffer.end()?;
 

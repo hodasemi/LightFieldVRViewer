@@ -66,7 +66,12 @@ impl Plane {
             .set_data(&vertices)
             .build(command_buffer.device().clone())?;
 
-        let gpu_buffer = Buffer::into_device_local(cpu_buffer, command_buffer)?;
+        let gpu_buffer = Buffer::into_device_local(
+            cpu_buffer,
+            command_buffer,
+            VK_ACCESS_MEMORY_READ_BIT,
+            VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
+        )?;
 
         let blas = AccelerationStructure::bottom_level()
             .add_vertices(&gpu_buffer, None)
