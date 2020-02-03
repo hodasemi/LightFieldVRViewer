@@ -8,6 +8,7 @@ use std::f32;
 use std::iter::IntoIterator;
 use std::ops::IndexMut;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 struct LightField {
     frustum: LightFieldFrustum,
@@ -18,6 +19,7 @@ struct LightField {
 
 impl LightField {
     pub fn new(
+        queue: &Queue,
         command_buffer: &Arc<CommandBuffer>,
         data: impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
         frustum: LightFieldFrustum,
@@ -27,6 +29,7 @@ impl LightField {
 
         for (plane_info, vertices, image_infos) in data.into_iter() {
             planes.push(Plane::new(
+                queue,
                 command_buffer,
                 plane_info,
                 image_infos,
@@ -51,11 +54,16 @@ struct Plane {
 
 impl Plane {
     fn new(
+        queue: &Queue,
         command_buffer: &Arc<CommandBuffer>,
         plane_info: PlaneInfo,
         image_infos: Vec<PlaneImageInfo>,
         vertices: [Vector3<f32>; 6],
     ) -> VerboseResult<Self> {
+        command_buffer.begin(VkCommandBufferBeginInfo::new(
+            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        ))?;
+
         let cpu_buffer = Buffer::builder()
             .set_memory_properties(
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
@@ -66,8 +74,7 @@ impl Plane {
             .set_data(&vertices)
             .build(command_buffer.device().clone())?;
 
-        let gpu_buffer = Buffer::into_device_local(
-            cpu_buffer,
+        let gpu_buffer = cpu_buffer.into_device_local(
             command_buffer,
             VK_ACCESS_MEMORY_READ_BIT,
             VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
@@ -78,6 +85,17 @@ impl Plane {
             .build(command_buffer.device().clone())?;
 
         blas.generate(command_buffer)?;
+
+        command_buffer.end()?;
+
+        let submit = SubmitInfo::default().add_command_buffer(command_buffer);
+        let fence = Fence::builder().build(command_buffer.device().clone())?;
+
+        queue.submit(Some(&fence), &[submit])?;
+
+        command_buffer
+            .device()
+            .wait_for_fences(&[&fence], true, Duration::from_secs(120))?;
 
         Ok(Plane {
             info: plane_info,
@@ -93,12 +111,12 @@ pub struct CPUInterpolation {
 
     last_position: TargetMode<Mutex<Vector3<f32>>>,
 
-    last_result:
-        TargetMode<Mutex<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>>>,
+    last_result: TargetMode<Mutex<Option<Arc<AccelerationStructure>>>>,
 }
 
 impl CPUInterpolation {
     pub fn new<T>(
+        queue: &Queue,
         command_buffer: &Arc<CommandBuffer>,
         interpolation_infos: Vec<(
             impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
@@ -110,7 +128,13 @@ impl CPUInterpolation {
         let mut light_fields = Vec::with_capacity(interpolation_infos.len());
 
         for (data, frustum, direction) in interpolation_infos.into_iter() {
-            light_fields.push(LightField::new(command_buffer, data, frustum, direction)?);
+            light_fields.push(LightField::new(
+                queue,
+                command_buffer,
+                data,
+                frustum,
+                direction,
+            )?);
         }
 
         let last_position = match mode {
@@ -167,7 +191,7 @@ impl CPUInterpolation {
 pub struct Interpolation<'a> {
     light_fields: &'a [LightField],
     last_position: &'a Mutex<Vector3<f32>>,
-    last_result: &'a Mutex<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>>,
+    last_result: &'a Mutex<Option<Arc<AccelerationStructure>>>,
 }
 
 impl<'a> Interpolation<'a> {
@@ -178,7 +202,7 @@ impl<'a> Interpolation<'a> {
         inv_view: Matrix4<f32>,
         inv_proj: Matrix4<f32>,
         mut plane_infos: impl IndexMut<usize, Output = PlaneInfo>,
-    ) -> VerboseResult<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>> {
+    ) -> VerboseResult<Option<Arc<AccelerationStructure>>> {
         let my_position = (inv_view * vec4(0.0, 0.0, 0.0, 1.0)).truncate();
 
         let mut last_position = self.last_position.lock()?;
@@ -192,7 +216,10 @@ impl<'a> Interpolation<'a> {
         let direction = inv_view * (inv_proj * DEFAULT_FORWARD.extend(1.0)).xyz().extend(1.0);
         let light_fields = self.gather_light_fields(my_position, direction.xyz().normalize());
 
-        let mut blasses = Vec::new();
+        let mut tlas_builder = AccelerationStructure::top_level()
+            .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
+
+        let mut i = 0;
 
         for (light_field_weight, light_field) in light_fields.iter() {
             for plane in light_field.planes.iter() {
@@ -323,34 +350,28 @@ impl<'a> Interpolation<'a> {
                         }
                     };
 
-                    plane_infos[blasses.len()] =
-                        plane.info.clone(indices, bary, *light_field_weight);
+                    plane_infos[i] = plane.info.clone(indices, bary, *light_field_weight);
 
-                    blasses.push(plane.blas.clone());
+                    i += 1;
+
+                    tlas_builder = tlas_builder.add_instance(&plane.blas, None, 0);
                 }
             }
         }
 
         // return if haven't added any geometry to the blas
-        if blasses.is_empty() {
+        if i == 0 {
             *self.last_result.lock()? = None;
             return Ok(None);
-        }
-
-        let mut tlas_builder = AccelerationStructure::top_level()
-            .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
-
-        for blas in blasses.iter() {
-            tlas_builder = tlas_builder.add_instance(blas, None, 0);
         }
 
         let tlas = tlas_builder.build(context.device().clone())?;
 
         tlas.generate(command_buffer)?;
 
-        *self.last_result.lock()? = Some((blasses.clone(), tlas.clone()));
+        *self.last_result.lock()? = Some(tlas.clone());
 
-        Ok(Some((blasses, tlas)))
+        Ok(Some(tlas))
     }
 
     #[inline]
@@ -384,6 +405,13 @@ impl<'a> Interpolation<'a> {
 
     #[inline]
     fn select_and_weight<'c>(light_fields: &[(f32, &'c LightField)]) -> Vec<(f32, &'c LightField)> {
+        if light_fields.len() == 1 {
+            return light_fields
+                .iter()
+                .map(|(_, light_field)| (1.0, *light_field))
+                .collect();
+        }
+
         let (first_angle, first_light_field) = light_fields[0];
         let (second_angle, second_light_field) = light_fields[1];
 

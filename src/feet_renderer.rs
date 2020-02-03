@@ -2,6 +2,7 @@ use context::prelude::*;
 use rand::Rng;
 
 use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::time::Duration;
 
 use cgmath::{vec2, vec4, InnerSpace};
 
@@ -155,23 +156,21 @@ impl FeetRenderer {
             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         ))?;
 
-        let feet_gpu_vertex_buffer = Buffer::into_device_local(
-            feet_cpu_vertex_buffer,
+        let feet_gpu_vertex_buffer = feet_cpu_vertex_buffer.into_device_local(
             &command_buffer,
-            VK_ACCESS_SHADER_READ_BIT,
+            VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
             VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
         )?;
 
-        let outline_cpu_vertex_buffer = Buffer::into_device_local(
-            outline_cpu_vertex_buffer,
+        let outline_cpu_vertex_buffer = outline_cpu_vertex_buffer.into_device_local(
             &command_buffer,
-            VK_ACCESS_SHADER_READ_BIT,
+            VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
             VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
         )?;
 
         command_buffer.end()?;
 
-        let submit = SubmitInfo::default().add_command_buffer(command_buffer);
+        let submit = SubmitInfo::default().add_command_buffer(&command_buffer);
         let fence = Fence::builder().build(context.device().clone())?;
 
         let queue_lock = context.queue().lock()?;
@@ -179,7 +178,7 @@ impl FeetRenderer {
 
         context
             .device()
-            .wait_for_fences(&[&fence], true, 1_000_000_000)?;
+            .wait_for_fences(&[&fence], true, Duration::from_secs(10))?;
 
         Ok(FeetRenderer {
             rasterizer: RwLock::new(Rasterizer::new(context)?),

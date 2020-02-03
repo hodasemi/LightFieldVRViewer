@@ -31,9 +31,7 @@ pub struct LightFieldViewer {
     sbt: ShaderBindingTable,
 
     // scene data
-    acceleration_structures: Mutex<
-        Option<TargetMode<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>>>,
-    >,
+    acceleration_structures: Mutex<Option<TargetMode<Option<Arc<AccelerationStructure>>>>>,
     _images: Vec<Arc<Image>>,
     plane_buffer: TargetMode<Arc<Buffer<PlaneInfo>>>,
 
@@ -267,7 +265,7 @@ impl TScene for LightFieldViewer {
 
                 let inverted_transform = transform.invert()?;
 
-                if let Some((blasses, tlas)) = Self::update_plane_buffer(
+                if let Some(tlas) = Self::update_plane_buffer(
                     command_buffer,
                     &self.context,
                     plane_buffer,
@@ -277,8 +275,7 @@ impl TScene for LightFieldViewer {
                 )? {
                     as_descriptor.update(&[DescriptorWrite::acceleration_structures(0, &[&tlas])]);
 
-                    *self.acceleration_structures.lock()? =
-                        Some(TargetMode::Single(Some((blasses, tlas))));
+                    *self.acceleration_structures.lock()? = Some(TargetMode::Single(Some(tlas)));
 
                     self.render(
                         *index,
@@ -330,7 +327,7 @@ impl TScene for LightFieldViewer {
                 let (inverted_left_transform, inverted_right_transform) =
                     (left_transform.invert()?, right_transform.invert()?);
 
-                if let Some((left_blasses, left_tlas)) = Self::update_plane_buffer(
+                if let Some(left_tlas) = Self::update_plane_buffer(
                     command_buffer,
                     &self.context,
                     left_plane_buffer,
@@ -341,7 +338,7 @@ impl TScene for LightFieldViewer {
                     left_as_descriptor
                         .update(&[DescriptorWrite::acceleration_structures(0, &[&left_tlas])]);
 
-                    self.update_left_as(left_blasses, left_tlas)?;
+                    self.update_left_as(left_tlas)?;
 
                     self.render(
                         *left_index,
@@ -353,7 +350,7 @@ impl TScene for LightFieldViewer {
                     )?;
                 }
 
-                if let Some((right_blasses, right_tlas)) = Self::update_plane_buffer(
+                if let Some(right_tlas) = Self::update_plane_buffer(
                     command_buffer,
                     &self.context,
                     right_plane_buffer,
@@ -364,7 +361,7 @@ impl TScene for LightFieldViewer {
                     right_as_descriptor
                         .update(&[DescriptorWrite::acceleration_structures(0, &[&right_tlas])]);
 
-                    self.update_right_as(right_blasses, right_tlas)?;
+                    self.update_right_as(right_tlas)?;
 
                     self.render(
                         *right_index,
@@ -605,7 +602,7 @@ impl LightFieldViewer {
         inverted_view: Matrix4<f32>,
         inverted_proj: Matrix4<f32>,
         interpolation: &Interpolation<'_>,
-    ) -> VerboseResult<Option<(Vec<Arc<AccelerationStructure>>, Arc<AccelerationStructure>)>> {
+    ) -> VerboseResult<Option<Arc<AccelerationStructure>>> {
         interpolation.calculate_interpolation(
             command_buffer,
             context,
@@ -615,42 +612,34 @@ impl LightFieldViewer {
         )
     }
 
-    fn update_left_as(
-        &self,
-        blasses: Vec<Arc<AccelerationStructure>>,
-        tlas: Arc<AccelerationStructure>,
-    ) -> VerboseResult<()> {
+    fn update_left_as(&self, tlas: Arc<AccelerationStructure>) -> VerboseResult<()> {
         let mut acceleration_structures = self.acceleration_structures.lock()?;
 
         match acceleration_structures.as_mut() {
             Some(acceleration_structures) => {
                 let (left, _) = acceleration_structures.stereo_mut()?;
 
-                *left = Some((blasses, tlas));
+                *left = Some(tlas);
             }
             None => {
-                *acceleration_structures = Some(TargetMode::Stereo(None, Some((blasses, tlas))));
+                *acceleration_structures = Some(TargetMode::Stereo(Some(tlas), None));
             }
         }
 
         Ok(())
     }
 
-    fn update_right_as(
-        &self,
-        blasses: Vec<Arc<AccelerationStructure>>,
-        tlas: Arc<AccelerationStructure>,
-    ) -> VerboseResult<()> {
+    fn update_right_as(&self, tlas: Arc<AccelerationStructure>) -> VerboseResult<()> {
         let mut acceleration_structures = self.acceleration_structures.lock()?;
 
         match acceleration_structures.as_mut() {
             Some(acceleration_structures) => {
                 let (_, right) = acceleration_structures.stereo_mut()?;
 
-                *right = Some((blasses, tlas));
+                *right = Some(tlas);
             }
             None => {
-                *acceleration_structures = Some(TargetMode::Stereo(None, Some((blasses, tlas))));
+                *acceleration_structures = Some(TargetMode::Stereo(None, Some(tlas)));
             }
         }
 
@@ -764,27 +753,14 @@ impl LightFieldViewer {
 
         let command_buffer = context.render_core().allocate_primary_buffer()?;
 
-        command_buffer.begin(VkCommandBufferBeginInfo::new(
-            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        ))?;
+        let queue_lock = context.queue().lock()?;
 
         let interpolation = CPUInterpolation::new(
+            &queue_lock,
             &command_buffer,
             light_field_infos,
             context.render_core().images()?,
         )?;
-
-        command_buffer.end()?;
-
-        let submit = SubmitInfo::default().add_command_buffer(command_buffer);
-        let fence = Fence::builder().build(context.device().clone())?;
-
-        let queue_lock = context.queue().lock()?;
-        queue_lock.submit(Some(&fence), &[submit])?;
-
-        context
-            .device()
-            .wait_for_fences(&[&fence], true, 1_000_000_000)?;
 
         Ok((plane_buffer, images, interpolation))
     }
