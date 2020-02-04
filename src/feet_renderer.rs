@@ -152,33 +152,26 @@ impl FeetRenderer {
 
         let command_buffer = context.render_core().allocate_primary_buffer()?;
 
-        command_buffer.begin(VkCommandBufferBeginInfo::new(
-            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        ))?;
-
-        let feet_gpu_vertex_buffer = feet_cpu_vertex_buffer.into_device_local(
+        let (feet_gpu_vertex_buffer, outline_gpu_vertex_buffer) = SingleSubmit::submit(
             &command_buffer,
-            VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-            VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+            context.queue(),
+            |command_buffer| {
+                let feet_gpu_vertex_buffer = feet_cpu_vertex_buffer.into_device_local(
+                    &command_buffer,
+                    VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+                    VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+                )?;
+
+                let outline_gpu_vertex_buffer = outline_cpu_vertex_buffer.into_device_local(
+                    &command_buffer,
+                    VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+                    VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+                )?;
+
+                Ok((feet_gpu_vertex_buffer, outline_gpu_vertex_buffer))
+            },
+            Duration::from_secs(10),
         )?;
-
-        let outline_cpu_vertex_buffer = outline_cpu_vertex_buffer.into_device_local(
-            &command_buffer,
-            VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-            VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-        )?;
-
-        command_buffer.end()?;
-
-        let submit = SubmitInfo::default().add_command_buffer(&command_buffer);
-        let fence = Fence::builder().build(context.device().clone())?;
-
-        let queue_lock = context.queue().lock()?;
-        queue_lock.submit(Some(&fence), &[submit])?;
-
-        context
-            .device()
-            .wait_for_fences(&[&fence], true, Duration::from_secs(10))?;
 
         Ok(FeetRenderer {
             rasterizer: RwLock::new(Rasterizer::new(context)?),
@@ -190,7 +183,7 @@ impl FeetRenderer {
             feet_descriptor_set: descriptor_set,
             feet_vertex_buffer: feet_gpu_vertex_buffer,
 
-            frustum_vertex_buffer: outline_cpu_vertex_buffer,
+            frustum_vertex_buffer: outline_gpu_vertex_buffer,
         })
     }
 

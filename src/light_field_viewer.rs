@@ -753,10 +753,8 @@ impl LightFieldViewer {
 
         let command_buffer = context.render_core().allocate_primary_buffer()?;
 
-        let queue_lock = context.queue().lock()?;
-
         let interpolation = CPUInterpolation::new(
-            &queue_lock,
+            context.queue(),
             &command_buffer,
             light_field_infos,
             context.render_core().images()?,

@@ -19,7 +19,7 @@ struct LightField {
 
 impl LightField {
     pub fn new(
-        queue: &Queue,
+        queue: &Arc<Mutex<Queue>>,
         command_buffer: &Arc<CommandBuffer>,
         data: impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
         frustum: LightFieldFrustum,
@@ -54,16 +54,12 @@ struct Plane {
 
 impl Plane {
     fn new(
-        queue: &Queue,
+        queue: &Arc<Mutex<Queue>>,
         command_buffer: &Arc<CommandBuffer>,
         plane_info: PlaneInfo,
         image_infos: Vec<PlaneImageInfo>,
         vertices: [Vector3<f32>; 6],
     ) -> VerboseResult<Self> {
-        command_buffer.begin(VkCommandBufferBeginInfo::new(
-            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        ))?;
-
         let cpu_buffer = Buffer::builder()
             .set_memory_properties(
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
@@ -74,28 +70,26 @@ impl Plane {
             .set_data(&vertices)
             .build(command_buffer.device().clone())?;
 
-        let gpu_buffer = cpu_buffer.into_device_local(
+        let (gpu_buffer, blas) = SingleSubmit::submit(
             command_buffer,
-            VK_ACCESS_MEMORY_READ_BIT,
-            VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
+            queue,
+            |command_buffer| {
+                let gpu_buffer = cpu_buffer.into_device_local(
+                    command_buffer,
+                    VK_ACCESS_MEMORY_READ_BIT,
+                    VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
+                )?;
+
+                let blas = AccelerationStructure::bottom_level()
+                    .add_vertices(&gpu_buffer, None)
+                    .build(command_buffer.device().clone())?;
+
+                blas.generate(command_buffer)?;
+
+                Ok((gpu_buffer, blas))
+            },
+            Duration::from_secs(10),
         )?;
-
-        let blas = AccelerationStructure::bottom_level()
-            .add_vertices(&gpu_buffer, None)
-            .build(command_buffer.device().clone())?;
-
-        blas.generate(command_buffer)?;
-
-        command_buffer.end()?;
-
-        let submit = SubmitInfo::default().add_command_buffer(command_buffer);
-        let fence = Fence::builder().build(command_buffer.device().clone())?;
-
-        queue.submit(Some(&fence), &[submit])?;
-
-        command_buffer
-            .device()
-            .wait_for_fences(&[&fence], true, Duration::from_secs(120))?;
 
         Ok(Plane {
             info: plane_info,
@@ -116,7 +110,7 @@ pub struct CPUInterpolation {
 
 impl CPUInterpolation {
     pub fn new<T>(
-        queue: &Queue,
+        queue: &Arc<Mutex<Queue>>,
         command_buffer: &Arc<CommandBuffer>,
         interpolation_infos: Vec<(
             impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
