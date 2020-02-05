@@ -30,7 +30,6 @@ struct RayPayload {
 };
 
 layout(location = 0) rayPayloadInNV RayPayload pay_load;
-layout(location = 1) rayPayloadNV vec4 global_origin;
 hitAttributeNV vec2 attribs;
 
 float distance_to_line(vec3 reference, vec3 normal, vec3 target) {
