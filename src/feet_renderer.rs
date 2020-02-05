@@ -152,10 +152,8 @@ impl FeetRenderer {
 
         let command_buffer = context.render_core().allocate_primary_buffer()?;
 
-        let (feet_gpu_vertex_buffer, outline_gpu_vertex_buffer) = SingleSubmit::submit(
-            &command_buffer,
-            context.queue(),
-            |command_buffer| {
+        let (feet_gpu_vertex_buffer, outline_gpu_vertex_buffer) =
+            SingleSubmit::builder(&command_buffer, context.queue(), |command_buffer| {
                 let feet_gpu_vertex_buffer = feet_cpu_vertex_buffer.into_device_local(
                     &command_buffer,
                     VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
@@ -169,9 +167,9 @@ impl FeetRenderer {
                 )?;
 
                 Ok((feet_gpu_vertex_buffer, outline_gpu_vertex_buffer))
-            },
-            Duration::from_secs(10),
-        )?;
+            })
+            .wait_for_timeout(Duration::from_secs(10))
+            .submit()?;
 
         Ok(FeetRenderer {
             rasterizer: RwLock::new(Rasterizer::new(context)?),

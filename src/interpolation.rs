@@ -8,7 +8,6 @@ use std::f32;
 use std::iter::IntoIterator;
 use std::ops::IndexMut;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 struct LightField {
     frustum: LightFieldFrustum,
@@ -70,26 +69,22 @@ impl Plane {
             .set_data(&vertices)
             .build(command_buffer.device().clone())?;
 
-        let (gpu_buffer, blas) = SingleSubmit::submit(
-            command_buffer,
-            queue,
-            |command_buffer| {
-                let gpu_buffer = cpu_buffer.into_device_local(
-                    command_buffer,
-                    VK_ACCESS_MEMORY_READ_BIT,
-                    VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
-                )?;
+        let (gpu_buffer, blas) = SingleSubmit::builder(command_buffer, queue, |command_buffer| {
+            let gpu_buffer = cpu_buffer.into_device_local(
+                command_buffer,
+                VK_ACCESS_MEMORY_READ_BIT,
+                VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
+            )?;
 
-                let blas = AccelerationStructure::bottom_level()
-                    .add_vertices(&gpu_buffer, None)
-                    .build(command_buffer.device().clone())?;
+            let blas = AccelerationStructure::bottom_level()
+                .add_vertices(&gpu_buffer, None)
+                .build(command_buffer.device().clone())?;
 
-                blas.generate(command_buffer)?;
+            blas.generate(command_buffer)?;
 
-                Ok((gpu_buffer, blas))
-            },
-            Duration::from_secs(10),
-        )?;
+            Ok((gpu_buffer, blas))
+        })
+        .submit()?;
 
         Ok(Plane {
             info: plane_info,
