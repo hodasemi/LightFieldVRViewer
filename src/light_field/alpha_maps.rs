@@ -55,8 +55,8 @@ impl AlphaMaps {
         for (index, disp_data) in pfm.data.iter().enumerate() {
             let (x, y) = Self::to_xy(&pfm, index);
 
-            for (disparity, alpha_map) in alpha_maps.iter_mut().enumerate() {
-                if (disp_data - disparity as f32).abs() <= epsilon {
+            for (disparity_layer_index, alpha_map) in alpha_maps.iter_mut().enumerate() {
+                if (disp_data - disparity_layer_index as f32).abs() <= epsilon {
                     alpha_map.data[x][y] = true;
                 }
             }
