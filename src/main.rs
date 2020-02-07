@@ -37,7 +37,11 @@ fn main() -> VerboseResult<()> {
 
     for join_handle in join_handles.into_iter() {
         match join_handle.join()? {
-            Ok(light_field) => light_fields.push(light_field),
+            Ok(light_field) => {
+                if !light_field.is_empty() {
+                    light_fields.push(light_field);
+                }
+            }
             Err(msg) => println!("{}", msg),
         }
     }
@@ -48,14 +52,20 @@ fn main() -> VerboseResult<()> {
     }
 
     // create viewer
-    let light_field_viewer = LightFieldViewer::new(
+    let light_field_viewer = match LightFieldViewer::new(
         &context,
         light_fields,
         viewer_config.rotation_speed,
         viewer_config.movement_speed,
         viewer_config.enable_feet,
         viewer_config.enable_frustum,
-    )?;
+    ) {
+        Ok(viewer) => viewer,
+        Err(err) => {
+            println!("{}", err.message());
+            return Ok(());
+        }
+    };
 
     println!("created viewer!");
 

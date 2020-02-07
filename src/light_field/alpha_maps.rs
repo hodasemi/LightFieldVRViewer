@@ -7,6 +7,7 @@ use std::slice::Iter;
 
 use ordered_float::OrderedFloat;
 use pxm::PFM;
+use std::cmp::max;
 
 #[derive(Debug, Clone)]
 pub struct AlphaMap {
@@ -50,7 +51,7 @@ impl AlphaMaps {
     pub fn new(path: &str, alpha_map_count: usize, epsilon: f32) -> VerboseResult<Self> {
         let pfm = Self::open_pfm_file(path)?;
 
-        let mut alpha_maps = vec![AlphaMap::new(pfm.width, pfm.height); alpha_map_count];
+        let mut alpha_maps = vec![AlphaMap::new(pfm.width, pfm.height); max(alpha_map_count, 1)];
 
         for (index, disp_data) in pfm.data.iter().enumerate() {
             let (x, y) = Self::to_xy(&pfm, index);

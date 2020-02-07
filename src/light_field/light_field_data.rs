@@ -295,6 +295,10 @@ impl LightFieldData {
         self.data
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     fn frustum_extents_at_depth(frustum: &CameraFrustum, depth: f32) -> (f32, f32) {
         let (left_top, left_bottom, right_top, _) = frustum.get_corners_at_depth(depth);
 

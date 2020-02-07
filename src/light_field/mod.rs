@@ -43,7 +43,7 @@ impl LightField {
         );
 
         let mut total_index = 0;
-        let disparity_difference = config.meta.disp_min.abs() + config.meta.disp_max.abs();
+        let disparity_difference = config.meta.disp_max - config.meta.disp_min;
 
         for x in 0..config.extrinsics.horizontal_camera_count as usize {
             for y in 0..config.extrinsics.vertical_camera_count as usize {
@@ -198,6 +198,10 @@ impl LightField {
 
     pub fn into_data(self) -> Vec<Plane> {
         self.light_field_data.into_data()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.light_field_data.is_empty()
     }
 
     #[inline]
