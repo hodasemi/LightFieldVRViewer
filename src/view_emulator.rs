@@ -1,6 +1,6 @@
 use context::prelude::*;
 
-use cgmath::{vec3, Deg, Matrix3, Matrix4, Point3, Vector3};
+use cgmath::{vec3, Deg, Matrix3, Matrix4, Point3, Rad, Vector3};
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,7 +39,7 @@ impl ViewEmulator {
         let angle = Deg(0.0);
 
         let position = Point3::new(0.0, 0.0, 0.0);
-        let direction = Matrix3::from_axis_angle(UP, angle) * DEFAULT_FORWARD;
+        let direction = Self::direction(angle);
 
         let simulation_transform = VRTransformations {
             proj: perspective(
@@ -86,7 +86,7 @@ impl ViewEmulator {
                 self.direction = self.direction - self.turn_speed() * time_diff.as_secs_f32();
             }
 
-            let dir = self.direction();
+            let dir = Self::direction(self.direction);
 
             // check for left/right movement
             if self.x_dir < 0 {
@@ -122,7 +122,7 @@ impl ViewEmulator {
             }
 
             let mut transform = self.simulation_transform;
-            let dir = self.direction();
+
             transform.view =
                 Matrix4::look_at(self.position, self.position + vec3(dir.x, dir.y, dir.z), UP);
 
@@ -194,7 +194,7 @@ impl ViewEmulator {
     }
 
     #[inline]
-    fn direction(&self) -> Vector3<f32> {
-        Matrix3::from_axis_angle(UP, self.direction) * DEFAULT_FORWARD
+    fn direction(angle: impl Into<Rad<f32>>) -> Vector3<f32> {
+        Matrix3::from_axis_angle(UP, angle) * DEFAULT_FORWARD
     }
 }
