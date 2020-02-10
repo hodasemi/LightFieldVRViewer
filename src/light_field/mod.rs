@@ -2,6 +2,8 @@ mod alpha_maps;
 pub mod light_field_data;
 pub mod light_field_frustum;
 
+use ordered_float::OrderedFloat;
+
 use context::prelude::*;
 use image::{ImageBuffer, Pixel, Rgba};
 
@@ -14,11 +16,20 @@ use light_field_frustum::CameraFrustum;
 
 use cgmath::{Array, InnerSpace, Vector3};
 
+use pxm::PFM;
+
 use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 
-const EPSILON: f32 = 0.5;
+struct DepthInfo {
+    depth_maps: Vec<PFM>,
+
+    indices: Vec<usize>,
+
+    min: f32,
+    max: f32,
+}
 
 pub struct LightField {
     pub config: Config,
@@ -32,7 +43,7 @@ pub struct LightField {
 }
 
 impl LightField {
-    pub fn new(context: &Arc<Context>, dir: &str) -> VerboseResult<Self> {
+    pub fn new(context: &Arc<Context>, dir: &str, number_of_slices: usize) -> VerboseResult<Self> {
         println!("started loading light field {}", dir);
 
         let config = Config::load(&format!("{}/parameters.cfg", dir))?;
@@ -42,95 +53,86 @@ impl LightField {
                 as usize,
         );
 
-        let mut total_index = 0;
-        let disparity_difference = config.meta.disp_max - config.meta.disp_min;
+        let depth_info = Self::load_depth_maps(
+            dir,
+            config.extrinsics.horizontal_camera_count as usize
+                * config.extrinsics.vertical_camera_count as usize,
+        )?;
 
-        for x in 0..config.extrinsics.horizontal_camera_count as usize {
-            for y in 0..config.extrinsics.vertical_camera_count as usize {
-                let meta_image_width = config.intrinsics.image_width;
-                let meta_image_height = config.intrinsics.image_height;
+        let slice_thickness = (depth_info.max - depth_info.min) / number_of_slices as f32;
+        let minimum_depth = depth_info.min;
 
-                let dir = dir.to_string();
+        for (i, (pfm, index)) in depth_info
+            .depth_maps
+            .into_iter()
+            .zip(depth_info.indices.iter())
+            .enumerate()
+        {
+            assert_eq!(i, *index);
 
-                threads.push(thread::spawn(move || {
-                    let image_path = format!("{}/input_Cam{:03}.png", dir, total_index);
-                    let disparity_path =
-                        format!("{}/gt_disp_lowres_Cam{:03}.pfm", dir, total_index);
-                    let depth_path = format!("{}/gt_depth_lowres_Cam{:03}.pfm", dir, total_index);
+            let (x, y) = AlphaMaps::to_xy(config.extrinsics.vertical_camera_count as usize, i);
 
-                    // check if image exists
-                    if !Path::new(&image_path).exists() {
-                        create_error!(format!("{} does not exist", image_path));
+            let meta_image_width = config.intrinsics.image_width;
+            let meta_image_height = config.intrinsics.image_height;
+
+            let dir = dir.to_string();
+
+            threads.push(thread::spawn(move || {
+                let image_path = format!("{}/input_Cam{:03}.png", dir, i);
+
+                // check if image exists
+                if !Path::new(&image_path).exists() {
+                    create_error!(format!("{} does not exist", image_path));
+                }
+
+                let alpha_maps =
+                    AlphaMaps::new(pfm, number_of_slices, minimum_depth, slice_thickness)?;
+
+                let image_data = match image::open(&image_path) {
+                    Ok(tex) => tex.to_rgba(),
+                    Err(err) => {
+                        create_error!(format!("error loading image (\"{}\"): {}", image_path, err))
                     }
+                };
 
-                    // check if disparity map exists
-                    if !Path::new(&disparity_path).exists() {
-                        create_error!(format!("{} does not exist", disparity_path));
+                // check if texture dimensions match meta information
+                if image_data.width() != meta_image_width
+                    || image_data.height() != meta_image_height
+                {
+                    create_error!(format!(
+                        "Image ({}) has a not expected extent, expected: {:?} found: {:?}",
+                        image_path,
+                        (meta_image_width, meta_image_height),
+                        (image_data.width(), image_data.height())
+                    ));
+                }
+
+                // let mut images = Vec::with_capacity(alpha_maps.len());
+                let mut images = Vec::new();
+
+                for (layer_index, alpha_map) in alpha_maps.iter().enumerate() {
+                    let mut target_image: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(
+                        image_data.width(),
+                        image_data.height(),
+                        Rgba::from_channels(0, 0, 0, 0),
+                    );
+
+                    let mut found_value = false;
+
+                    alpha_map.for_each_alpha(|x, y| {
+                        target_image[(x as u32, y as u32)] = image_data[(x as u32, y as u32)];
+                        found_value = true;
+                    });
+
+                    if found_value {
+                        images.push((target_image, layer_index, alpha_map.depth_values().clone()));
                     }
+                }
 
-                    // check if depth map exists
-                    if !Path::new(&depth_path).exists() {
-                        create_error!(format!("{} does not exist", depth_path));
-                    }
+                println!("image {} has position ({}, {})", i, x, y);
 
-                    let alpha_maps =
-                        AlphaMaps::new(&disparity_path, disparity_difference as usize, EPSILON)?
-                            .load_depth(&depth_path)?;
-
-                    let image_data = match image::open(&image_path) {
-                        Ok(tex) => tex.to_rgba(),
-                        Err(err) => create_error!(format!(
-                            "error loading image (\"{}\"): {}",
-                            image_path, err
-                        )),
-                    };
-
-                    // check if texture dimensions match meta information
-                    if image_data.width() != meta_image_width
-                        || image_data.height() != meta_image_height
-                    {
-                        create_error!(format!(
-                            "Image ({}) has a not expected extent, expected: {:?} found: {:?}",
-                            image_path,
-                            (meta_image_width, meta_image_height),
-                            (image_data.width(), image_data.height())
-                        ));
-                    }
-
-                    let mut images = Vec::with_capacity(alpha_maps.len());
-
-                    for (disparity_index, alpha_map) in alpha_maps.iter().enumerate() {
-                        let mut target_image: ImageBuffer<Rgba<u8>, Vec<u8>> =
-                            ImageBuffer::from_pixel(
-                                image_data.width(),
-                                image_data.height(),
-                                Rgba::from_channels(0, 0, 0, 0),
-                            );
-
-                        let mut found_value = false;
-
-                        alpha_map.for_each_alpha(|x, y| {
-                            target_image[(x as u32, y as u32)] = image_data[(x as u32, y as u32)];
-                            found_value = true;
-                        });
-
-                        if found_value {
-                            images.push((
-                                target_image,
-                                disparity_index,
-                                alpha_map
-                                    .depth_values()
-                                    .clone()
-                                    .ok_or("no depth attached to this alpha map")?,
-                            ));
-                        }
-                    }
-
-                    Ok((images, x, y))
-                }));
-
-                total_index += 1;
-            }
+                Ok((images, x, y))
+            }));
         }
 
         // swap y and z coordinates
@@ -181,6 +183,43 @@ impl LightField {
             right,
 
             light_field_data,
+        })
+    }
+
+    fn load_depth_maps(dir: &str, max_maps: usize) -> VerboseResult<DepthInfo> {
+        let mut depth_maps = Vec::new();
+        let mut min = OrderedFloat(std::f32::MAX);
+        let mut max = OrderedFloat(std::f32::MIN);
+        let mut indices = Vec::new();
+
+        for i in 0..max_maps {
+            let depth_path = format!("{}/gt_depth_lowres_Cam{:03}.pfm", dir, i);
+
+            // check if depth map exists
+            if !Path::new(&depth_path).exists() {
+                create_error!(format!("{} does not exist", depth_path));
+            }
+
+            let depth_pfm = AlphaMaps::open_pfm_file(&depth_path)?;
+
+            for depth in depth_pfm.data.iter() {
+                if *depth < 10000.0 {
+                    min = std::cmp::min(min, OrderedFloat(*depth));
+                    max = std::cmp::max(max, OrderedFloat(*depth));
+                }
+            }
+
+            depth_maps.push(depth_pfm);
+            indices.push(i);
+        }
+
+        Ok(DepthInfo {
+            depth_maps,
+
+            indices,
+
+            min: min.0,
+            max: max.0,
         })
     }
 

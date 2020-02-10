@@ -20,6 +20,8 @@ fn main() -> VerboseResult<()> {
 
     let context = create_context(viewer_config.force_desktop, viewer_config.enable_vsync)?;
 
+    let number_of_slices = viewer_config.number_of_slices;
+
     // spawn threads to load light fields
     let join_handles: Vec<thread::JoinHandle<VerboseResult<LightField>>> = viewer_config
         .light_fields
@@ -28,7 +30,7 @@ fn main() -> VerboseResult<()> {
         .map(|field_path| {
             let context_clone = context.clone();
 
-            thread::spawn(move || LightField::new(&context_clone, &field_path))
+            thread::spawn(move || LightField::new(&context_clone, &field_path, number_of_slices))
         })
         .collect();
 
@@ -149,6 +151,7 @@ const LIGHT_FIELDS: &str = "light_fields";
 const ENABLE_FEET: &str = "enable_feet";
 const ENABLE_FRUSTUM: &str = "enable_frustum";
 const FORCE_DESKTOP: &str = "force";
+const NUMBER_OF_SLICES: &str = "slice_count";
 
 struct VrViewerConfig {
     // in meter per second
@@ -161,6 +164,7 @@ struct VrViewerConfig {
     enable_vsync: bool,
 
     light_fields: Vec<String>,
+    number_of_slices: usize,
     enable_feet: bool,
     enable_frustum: bool,
     force_desktop: bool,
@@ -191,6 +195,10 @@ impl VrViewerConfig {
         }
 
         if let Some(info) = config_data.get(INFO_META) {
+            if let Some(value) = info.get(NUMBER_OF_SLICES) {
+                config.number_of_slices = value.to_value()?;
+            }
+
             if let Some(value) = info.get(LIGHT_FIELDS) {
                 config.light_fields = value.to_array()?;
             }
@@ -215,6 +223,7 @@ impl Default for VrViewerConfig {
             rotation_speed: Deg(30.0),
             enable_vsync: true,
             light_fields: Vec::new(),
+            number_of_slices: 5,
             enable_frustum: true,
             enable_feet: true,
             force_desktop: false,

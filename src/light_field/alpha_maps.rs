@@ -1,19 +1,16 @@
 use context::prelude::*;
 
-use std::collections::BinaryHeap;
 use std::fs::File;
 use std::io::BufReader;
 use std::slice::Iter;
 
-use ordered_float::OrderedFloat;
 use pxm::PFM;
-use std::cmp::max;
 
 #[derive(Debug, Clone)]
 pub struct AlphaMap {
     data: Vec<Vec<bool>>,
 
-    depth: Option<Vec<f32>>,
+    depth: Vec<f32>,
 }
 
 impl AlphaMap {
@@ -21,7 +18,7 @@ impl AlphaMap {
         AlphaMap {
             data: vec![vec![false; height as usize]; width as usize],
 
-            depth: None,
+            depth: Vec::new(),
         }
     }
 
@@ -38,7 +35,7 @@ impl AlphaMap {
         }
     }
 
-    pub fn depth_values(&self) -> &Option<Vec<f32>> {
+    pub fn depth_values(&self) -> &Vec<f32> {
         &self.depth
     }
 }
@@ -48,17 +45,23 @@ pub struct AlphaMaps {
 }
 
 impl AlphaMaps {
-    pub fn new(path: &str, alpha_map_count: usize, epsilon: f32) -> VerboseResult<Self> {
-        let pfm = Self::open_pfm_file(path)?;
+    pub fn new(
+        depth_pfm: PFM,
+        layer_count: usize,
+        minimal_depth: f32,
+        threshold: f32,
+    ) -> VerboseResult<Self> {
+        let mut alpha_maps = vec![AlphaMap::new(depth_pfm.width, depth_pfm.height); layer_count];
 
-        let mut alpha_maps = vec![AlphaMap::new(pfm.width, pfm.height); max(alpha_map_count, 1)];
+        for (index, depth) in depth_pfm.data.iter().enumerate() {
+            let (x, y) = Self::to_xy(depth_pfm.height, index);
 
-        for (index, disp_data) in pfm.data.iter().enumerate() {
-            let (x, y) = Self::to_xy(&pfm, index);
-
-            for (disparity_layer_index, alpha_map) in alpha_maps.iter_mut().enumerate() {
-                if (disp_data - disparity_layer_index as f32).abs() <= epsilon {
+            for (layer_index, alpha_map) in alpha_maps.iter_mut().enumerate() {
+                if *depth >= (minimal_depth + layer_index as f32 * threshold)
+                    && *depth < (minimal_depth + (layer_index as f32 + 1.0) * threshold)
+                {
                     alpha_map.data[x][y] = true;
+                    alpha_map.depth.push(*depth);
                 }
             }
         }
@@ -66,42 +69,52 @@ impl AlphaMaps {
         Ok(AlphaMaps { maps: alpha_maps })
     }
 
-    pub fn load_depth(mut self, path: &str) -> VerboseResult<Self> {
-        let depth_pfm = Self::open_pfm_file(&path)?;
+    // pub fn load_depth(mut self, path: &str) -> VerboseResult<Self> {
+    //     let depth_pfm = Self::open_pfm_file(&path)?;
 
-        for alpha_map in self.maps.iter_mut() {
-            let mut depth_values = BinaryHeap::with_capacity(alpha_map.data.len());
+    //     let mut depths = Vec::new();
 
-            alpha_map.for_each_alpha(|x, y| {
-                let index = Self::to_index(&depth_pfm, x, y);
+    //     for depth in depth_pfm.data.iter() {
+    //         if !depths.contains(depth) {
+    //             depths.push(*depth);
+    //         }
+    //     }
 
-                depth_values.push(OrderedFloat(depth_pfm.data[index]));
-            });
+    //     println!("depths: {:#?}", depths);
 
-            if !depth_values.is_empty() {
-                let depth_vec = depth_values
-                    .into_sorted_vec()
-                    .iter()
-                    .map(|ordered_float| ordered_float.into_inner())
-                    .collect();
+    //     for alpha_map in self.maps.iter_mut() {
+    //         let mut depth_values = BinaryHeap::with_capacity(alpha_map.data.len());
 
-                alpha_map.depth = Some(depth_vec);
-            }
-        }
+    //         alpha_map.for_each_alpha(|x, y| {
+    //             let index = Self::to_index(&depth_pfm, x, y);
 
-        Ok(self)
-    }
+    //             depth_values.push(OrderedFloat(depth_pfm.data[index]));
+    //         });
+
+    //         if !depth_values.is_empty() {
+    //             let depth_vec = depth_values
+    //                 .into_sorted_vec()
+    //                 .iter()
+    //                 .map(|ordered_float| ordered_float.into_inner())
+    //                 .collect();
+
+    //             alpha_map.depth = Some(depth_vec);
+    //         }
+    //     }
+
+    //     Ok(self)
+    // }
 
     pub fn iter(&self) -> Iter<'_, AlphaMap> {
         self.maps.iter()
     }
 
-    pub fn len(&self) -> usize {
-        self.maps.len()
-    }
+    // pub fn len(&self) -> usize {
+    //     self.maps.len()
+    // }
 
     #[inline]
-    fn open_pfm_file(path: &str) -> VerboseResult<PFM> {
+    pub fn open_pfm_file(path: &str) -> VerboseResult<PFM> {
         let pfm_file = File::open(path)?;
         let mut pfm_bufreader = BufReader::new(pfm_file);
 
@@ -109,15 +122,15 @@ impl AlphaMaps {
     }
 
     #[inline]
-    fn to_xy(pfm: &PFM, index: usize) -> (usize, usize) {
-        let y = (index as f32 / pfm.height as f32).floor() as usize;
-        let x = index - (y * pfm.height);
+    pub fn to_xy(height: usize, index: usize) -> (usize, usize) {
+        let y = (index as f32 / height as f32).floor() as usize;
+        let x = index - (y * height);
 
         (x, y)
     }
 
-    #[inline]
-    fn to_index(pfm: &PFM, x: usize, y: usize) -> usize {
-        y * pfm.height + x
-    }
+    // #[inline]
+    // fn to_index(pfm: &PFM, x: usize, y: usize) -> usize {
+    //     y * pfm.height + x
+    // }
 }
