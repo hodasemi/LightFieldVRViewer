@@ -129,8 +129,6 @@ impl LightField {
                     }
                 }
 
-                println!("image {} has position ({}, {})", i, x, y);
-
                 Ok((images, x, y))
             }));
         }

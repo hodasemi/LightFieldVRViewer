@@ -100,7 +100,7 @@ pub struct Plane {
     pub content: Vec<(Arc<Image>, PlaneImageRatios, Vector2<f32>)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, Copy)]
 pub struct PlaneImageRatios {
     pub left: f32,
     pub right: f32,

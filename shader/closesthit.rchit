@@ -4,6 +4,13 @@
 
 const float INFINITY = 1.0 / 0.0;
 
+struct ImageBounds {
+    float left;
+    float right;
+    float top;
+    float bottom;
+};
+
 struct PlaneInfo {
     vec4 top_left;
     vec4 top_right;
@@ -14,6 +21,7 @@ struct PlaneInfo {
 
     ivec4 indices;
     vec4 bary;
+    ImageBounds bounds[4];
 };
 
 layout(set = 0, binding = 1) readonly buffer PlaneInfos {
@@ -56,10 +64,28 @@ vec2 calculate_barycentrics(PlaneInfo plane, vec3 point) {
     return barycentrics;
 }
 
-vec4 single_image(int index, vec2 hit_bary) {
-    vec2 uv = hit_bary.yx;
+vec2 normalized_uv(ImageBounds bounds, vec2 bary) {
+    float u = (bary.x - bounds.left) / (bounds.right - bounds.left);
+    float v = (bary.y - bounds.top) / (bounds.bottom - bounds.top);
 
-    return texture(images[nonuniformEXT(index)], uv);
+    // swap u and v
+    return vec2(v, u);
+}
+
+bool check_inside(ImageBounds bounds, vec2 bary) {
+    return (bary.x >= bounds.left) &&
+        (bary.x <= bounds.right) &&
+        (bary.y >= bounds.top) &&
+        (bary.y <= bounds.bottom);
+}
+
+vec4 single_image(int index, vec2 hit_bary, ImageBounds bounds) {
+    if (check_inside(bounds, hit_bary)) {
+        vec2 uv = normalized_uv(bounds, hit_bary);
+        return texture(images[nonuniformEXT(index)], uv);
+    } else {
+        return vec4(0.0);
+    }
 }
 
 void set_pay_load(vec4 color) {
@@ -94,17 +120,17 @@ void interpolate_images(PlaneInfo plane, vec2 hit_bary) {
     if (plane.indices[0] == -1) {
         return;
     } else if (plane.indices[1] == -1) {
-        color = single_image(plane.indices[0], hit_bary);
+        color = single_image(plane.indices[0], hit_bary, plane.bounds[0]);
     } else if (plane.indices[2] == -1) {
-        vec4 first = single_image(plane.indices[0], hit_bary);
-        vec4 second = single_image(plane.indices[1], hit_bary);
+        vec4 first = single_image(plane.indices[0], hit_bary, plane.bounds[0]);
+        vec4 second = single_image(plane.indices[1], hit_bary, plane.bounds[1]);
 
         color = linear(plane.bary.x, first, second);
     } else {
-        vec4 first = single_image(plane.indices[0], hit_bary);
-        vec4 second = single_image(plane.indices[1], hit_bary);
-        vec4 third = single_image(plane.indices[2], hit_bary);
-        vec4 fourth = single_image(plane.indices[3], hit_bary);
+        vec4 first = single_image(plane.indices[0], hit_bary, plane.bounds[0]);
+        vec4 second = single_image(plane.indices[1], hit_bary, plane.bounds[1]);
+        vec4 third = single_image(plane.indices[2], hit_bary, plane.bounds[2]);
+        vec4 fourth = single_image(plane.indices[3], hit_bary, plane.bounds[3]);
 
         color = bilinear(plane.bary.xy, first, second, third, fourth);
     }

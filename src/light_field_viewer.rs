@@ -698,6 +698,8 @@ impl LightFieldViewer {
 
                     indices: vec4(-1, -1, -1, -1),
                     bary: vec4(0.0, 0.0, 0.0, 0.0),
+
+                    bounds: [PlaneImageRatios::default(); 4],
                 };
 
                 // create vertex data
@@ -775,10 +777,18 @@ pub struct PlaneInfo {
 
     indices: Vector4<i32>,
     bary: Vector4<f32>,
+
+    bounds: [PlaneImageRatios; 4],
 }
 
 impl PlaneInfo {
-    pub fn clone(&self, indices: Vector4<i32>, bary: Vector2<f32>, weight: f32) -> Self {
+    pub fn clone(
+        &self,
+        indices: Vector4<i32>,
+        bary: Vector2<f32>,
+        weight: f32,
+        bounds: [PlaneImageRatios; 4],
+    ) -> Self {
         PlaneInfo {
             top_left: self.top_left,
             top_right: self.top_right,
@@ -789,6 +799,8 @@ impl PlaneInfo {
 
             indices,
             bary: bary.extend(weight).extend(0.0),
+
+            bounds,
         }
     }
 }

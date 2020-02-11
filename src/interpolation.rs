@@ -1,7 +1,7 @@
 use cgmath::{vec2, vec4, InnerSpace, Matrix4, Vector2, Vector3, Vector4, Zero};
 use context::prelude::*;
 
-use super::light_field::light_field_data::LightFieldFrustum;
+use super::light_field::light_field_data::{LightFieldFrustum, PlaneImageRatios};
 use super::light_field_viewer::{PlaneImageInfo, PlaneInfo, DEFAULT_FORWARD};
 
 use std::f32;
@@ -235,7 +235,7 @@ impl<'a> Interpolation<'a> {
                     X - is our reference point
                     */
 
-                    let (indices, bary) = if viewer_barycentric.y < 0.0 {
+                    let (indices, bary, bounds) = if viewer_barycentric.y < 0.0 {
                         // check horizontal axis
                         if viewer_barycentric.x < 0.0 {
                             // Above, Left Side
@@ -339,7 +339,7 @@ impl<'a> Interpolation<'a> {
                         }
                     };
 
-                    plane_infos[i] = plane.info.clone(indices, bary, *light_field_weight);
+                    plane_infos[i] = plane.info.clone(indices, bary, *light_field_weight, bounds);
 
                     i += 1;
 
@@ -497,7 +497,7 @@ impl<'a> Interpolation<'a> {
         &self,
         plane: &Plane,
         bary: Vector2<f32>,
-    ) -> Option<(i32, Vector2<f32>)> {
+    ) -> Option<(i32, Vector2<f32>, PlaneImageRatios)> {
         self.find_closest(plane, bary, |x_diff, y_diff| x_diff >= 0.0 && y_diff >= 0.0)
     }
 
@@ -505,7 +505,7 @@ impl<'a> Interpolation<'a> {
         &self,
         plane: &Plane,
         bary: Vector2<f32>,
-    ) -> Option<(i32, Vector2<f32>)> {
+    ) -> Option<(i32, Vector2<f32>, PlaneImageRatios)> {
         self.find_closest(plane, bary, |x_diff, y_diff| x_diff >= 0.0 && y_diff <= 0.0)
     }
 
@@ -513,7 +513,7 @@ impl<'a> Interpolation<'a> {
         &self,
         plane: &Plane,
         bary: Vector2<f32>,
-    ) -> Option<(i32, Vector2<f32>)> {
+    ) -> Option<(i32, Vector2<f32>, PlaneImageRatios)> {
         self.find_closest(plane, bary, |x_diff, y_diff| x_diff <= 0.0 && y_diff >= 0.0)
     }
 
@@ -521,7 +521,7 @@ impl<'a> Interpolation<'a> {
         &self,
         plane: &Plane,
         bary: Vector2<f32>,
-    ) -> Option<(i32, Vector2<f32>)> {
+    ) -> Option<(i32, Vector2<f32>, PlaneImageRatios)> {
         self.find_closest(plane, bary, |x_diff, y_diff| x_diff <= 0.0 && y_diff <= 0.0)
     }
 
@@ -531,13 +531,14 @@ impl<'a> Interpolation<'a> {
         plane: &Plane,
         bary: Vector2<f32>,
         f: F,
-    ) -> Option<(i32, Vector2<f32>)>
+    ) -> Option<(i32, Vector2<f32>, PlaneImageRatios)>
     where
         F: Fn(f32, f32) -> bool,
     {
         let mut minimal_distance = f32::MAX;
         let mut info_bary = Vector2::zero();
         let mut image_info_index = None;
+        let mut bound = None;
 
         for info in plane.image_infos.iter() {
             let x_diff = info.center.x - bary.x;
@@ -550,47 +551,63 @@ impl<'a> Interpolation<'a> {
                     minimal_distance = new_distance;
                     image_info_index = Some(info.image_index);
                     info_bary = info.center;
+                    bound = Some(info.ratios.clone());
                 }
             }
         }
 
-        match image_info_index {
-            Some(index) => Some((index as i32, info_bary)),
-            None => None,
+        match (image_info_index, bound) {
+            (Some(index), Some(bound)) => Some((index as i32, info_bary, bound)),
+            _ => None,
         }
     }
 
     #[inline]
     fn selector_of_one(
-        first: Option<(i32, Vector2<f32>)>,
+        first: Option<(i32, Vector2<f32>, PlaneImageRatios)>,
         debug: &str,
-    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>)> {
+    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>, [PlaneImageRatios; 4])> {
         match first {
-            Some((index, _)) => Ok((vec4(index, -1, -1, -1), vec2(0.0, 0.0))),
+            Some((index, _, ratio)) => Ok((
+                vec4(index, -1, -1, -1),
+                vec2(0.0, 0.0),
+                Self::single_ratio(ratio),
+            )),
             None => create_error!(format!("nothing could be found for {}", debug)),
         }
     }
 
     #[inline]
     fn selector_of_two_y(
-        above: Option<(i32, Vector2<f32>)>,
-        below: Option<(i32, Vector2<f32>)>,
+        above: Option<(i32, Vector2<f32>, PlaneImageRatios)>,
+        below: Option<(i32, Vector2<f32>, PlaneImageRatios)>,
         barycentric: Vector2<f32>,
         debug: &str,
-    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>)> {
+    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>, [PlaneImageRatios; 4])> {
         match (above, below) {
             // both first and second have been found
-            (Some((above_index, above_center)), Some((below_index, below_center))) => {
+            (
+                Some((above_index, above_center, above_ratio)),
+                Some((below_index, below_center, below_ratio)),
+            ) => {
                 assert!(above_center.y < below_center.y);
 
                 let weight = below_center.y - barycentric.y;
 
-                Ok((vec4(above_index, below_index, -1, -1), vec2(weight, 0.0)))
+                Ok((
+                    vec4(above_index, below_index, -1, -1),
+                    vec2(weight, 0.0),
+                    Self::two_ratios(above_ratio, below_ratio),
+                ))
             }
             // only left could be found
-            (Some((index, weight)), None) => Self::selector_of_one(Some((index, weight)), ""),
+            (Some((index, weight, ratio)), None) => {
+                Self::selector_of_one(Some((index, weight, ratio)), "")
+            }
             // only right could be found
-            (None, Some((index, weight))) => Self::selector_of_one(Some((index, weight)), ""),
+            (None, Some((index, weight, ratio))) => {
+                Self::selector_of_one(Some((index, weight, ratio)), "")
+            }
             // none could be found
             (None, None) => {
                 create_error!(format!("nothing could be found for {}", debug));
@@ -600,24 +617,35 @@ impl<'a> Interpolation<'a> {
 
     #[inline]
     fn selector_of_two_x(
-        left: Option<(i32, Vector2<f32>)>,
-        right: Option<(i32, Vector2<f32>)>,
+        left: Option<(i32, Vector2<f32>, PlaneImageRatios)>,
+        right: Option<(i32, Vector2<f32>, PlaneImageRatios)>,
         barycentric: Vector2<f32>,
         debug: &str,
-    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>)> {
+    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>, [PlaneImageRatios; 4])> {
         match (left, right) {
             // both first and second have been found
-            (Some((left_index, left_center)), Some((right_index, right_center))) => {
+            (
+                Some((left_index, left_center, left_ratio)),
+                Some((right_index, right_center, right_ratio)),
+            ) => {
                 assert!(left_center.x < right_center.x);
 
                 let weight = right_center.x - barycentric.x;
 
-                Ok((vec4(left_index, right_index, -1, -1), vec2(weight, 0.0)))
+                Ok((
+                    vec4(left_index, right_index, -1, -1),
+                    vec2(weight, 0.0),
+                    Self::two_ratios(left_ratio, right_ratio),
+                ))
             }
             // only left could be found
-            (Some((index, weight)), None) => Self::selector_of_one(Some((index, weight)), ""),
+            (Some((index, weight, ratio)), None) => {
+                Self::selector_of_one(Some((index, weight, ratio)), "")
+            }
             // only right could be found
-            (None, Some((index, weight))) => Self::selector_of_one(Some((index, weight)), ""),
+            (None, Some((index, weight, ratio))) => {
+                Self::selector_of_one(Some((index, weight, ratio)), "")
+            }
             // none could be found
             (None, None) => {
                 create_error!(format!("nothing could be found for {}", debug));
@@ -627,53 +655,60 @@ impl<'a> Interpolation<'a> {
 
     #[inline]
     fn selector_of_four(
-        top_left: Option<(i32, Vector2<f32>)>,
-        bottom_left: Option<(i32, Vector2<f32>)>,
-        top_right: Option<(i32, Vector2<f32>)>,
-        bottom_right: Option<(i32, Vector2<f32>)>,
+        top_left: Option<(i32, Vector2<f32>, PlaneImageRatios)>,
+        bottom_left: Option<(i32, Vector2<f32>, PlaneImageRatios)>,
+        top_right: Option<(i32, Vector2<f32>, PlaneImageRatios)>,
+        bottom_right: Option<(i32, Vector2<f32>, PlaneImageRatios)>,
         barycentric: Vector2<f32>,
-    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>)> {
+    ) -> VerboseResult<(Vector4<i32>, Vector2<f32>, [PlaneImageRatios; 4])> {
         match (bottom_left, top_left, bottom_right, top_right) {
             // all 4 were found
             (
-                Some((bottom_left_index, _)),
-                Some((top_left_index, _)),
-                Some((bottom_right_index, bottom_right_center)),
-                Some((top_right_index, _)),
+                Some((bottom_left_index, _, bottom_left_ratio)),
+                Some((top_left_index, _, top_left_ratio)),
+                Some((bottom_right_index, bottom_right_center, bottom_right_ratio)),
+                Some((top_right_index, _, top_right_ratio)),
             ) => {
                 let x = bottom_right_center.x - barycentric.x;
                 let y = bottom_right_center.y - barycentric.y;
 
-                Ok((vec4(
+                Ok((
+                    vec4(
                         bottom_left_index,
                         top_left_index,
                         bottom_right_index,
                         top_right_index,
                     ),
-                    vec2(x,y)
+                    vec2(x, y),
+                    [
+                        bottom_left_ratio,
+                        top_left_ratio,
+                        bottom_right_ratio,
+                        top_right_ratio,
+                    ],
                 ))
             }
             // only bottom left and bottom right - center above
             (
-                Some((bottom_left_index, bottom_left_center)),
+                Some((bottom_left_index, bottom_left_center, left_ratio)),
                 None,
-                Some((bottom_right_index, bottom_right_center)),
+                Some((bottom_right_index, bottom_right_center, right_ratio)),
                 None,
             ) => Self::selector_of_two_x(
-                Some((bottom_left_index, bottom_left_center)),
-                Some((bottom_right_index, bottom_right_center)),
+                Some((bottom_left_index, bottom_left_center, left_ratio)),
+                Some((bottom_right_index, bottom_right_center, right_ratio)),
                 barycentric,
                 "",
             ),
             // only top left and top right - center below
             (
                 None,
-                Some((top_left_index, top_left_center)),
+                Some((top_left_index, top_left_center, left_ratio)),
                 None,
-                Some((top_right_index, top_right_center)),
+                Some((top_right_index, top_right_center, right_ratio)),
             ) => Self::selector_of_two_x(
-                Some((top_left_index, top_left_center)),
-                Some((top_right_index, top_right_center)),
+                Some((top_left_index, top_left_center, left_ratio)),
+                Some((top_right_index, top_right_center, right_ratio)),
                 barycentric,
                 "",
             ),
@@ -681,38 +716,74 @@ impl<'a> Interpolation<'a> {
             (
                 None,
                 None,
-                Some((bottom_right_index, bottom_right_center)),
-                Some((top_right_index, top_right_center)),
+                Some((bottom_right_index, bottom_right_center, bottom_ratio)),
+                Some((top_right_index, top_right_center, top_ratio)),
             ) => Self::selector_of_two_y(
-                Some((top_right_index, top_right_center)),
-                Some((bottom_right_index, bottom_right_center)),
+                Some((top_right_index, top_right_center, top_ratio)),
+                Some((bottom_right_index, bottom_right_center, bottom_ratio)),
                 barycentric,
                 "",
             ),
             // only top left and bottom left - center right
             (
-                Some((bottom_left_index, bottom_left_center)),
-                Some((top_left_index, top_left_center)),
+                Some((bottom_left_index, bottom_left_center, bottom_ratio)),
+                Some((top_left_index, top_left_center, top_ratio)),
                 None,
                 None,
             ) => Self::selector_of_two_y(
-                Some((top_left_index, top_left_center)),
-                Some((bottom_left_index, bottom_left_center)),
+                Some((top_left_index, top_left_center, top_ratio)),
+                Some((bottom_left_index, bottom_left_center, bottom_ratio)),
                 barycentric,
                 "",
             ),
             // only bottom right - left top corner
-            (None, None, Some((index, _)), None) => Ok((vec4(index, -1, -1, -1), vec2(0.0, 0.0))),
+            (None, None, Some((index, _, ratio)), None) => Ok((
+                vec4(index, -1, -1, -1),
+                vec2(0.0, 0.0),
+                Self::single_ratio(ratio),
+            )),
             // only top right - left bottom corner
-            (None, None, None, Some((index, _))) => Ok((vec4(index, -1, -1, -1), vec2(0.0, 0.0))),
+            (None, None, None, Some((index, _, ratio))) => Ok((
+                vec4(index, -1, -1, -1),
+                vec2(0.0, 0.0),
+                Self::single_ratio(ratio),
+            )),
             // only bottom left - right top corner
-            (Some((index, _)), None, None, None) => Ok((vec4(index, -1, -1, -1), vec2(0.0, 0.0))),
+            (Some((index, _, ratio)), None, None, None) => Ok((
+                vec4(index, -1, -1, -1),
+                vec2(0.0, 0.0),
+                Self::single_ratio(ratio),
+            )),
             // only top left - right bottom corner
-            (None, Some((index, _)), None, None) => Ok((vec4(index, -1, -1, -1), vec2(0.0, 0.0))),
-            _ => create_error!(format!(
-                "no fitting constellation found: \n\tbottom_left: {:?}, \n\ttop_left: {:?}, \n\tbottom_right: {:?}, \n\ttop_right: {:?}",
-                bottom_left, top_left, bottom_right, top_right
-            ))
+            (None, Some((index, _, ratio)), None, None) => Ok((
+                vec4(index, -1, -1, -1),
+                vec2(0.0, 0.0),
+                Self::single_ratio(ratio),
+            )),
+            _ => create_error!("no fitting constellation found!"),
         }
+    }
+
+    #[inline]
+    fn single_ratio(ratio: PlaneImageRatios) -> [PlaneImageRatios; 4] {
+        [
+            ratio,
+            PlaneImageRatios::default(),
+            PlaneImageRatios::default(),
+            PlaneImageRatios::default(),
+        ]
+    }
+
+    #[inline]
+    fn two_ratios(
+        first_ratio: PlaneImageRatios,
+        second_ratio: PlaneImageRatios,
+    ) -> [PlaneImageRatios; 4] {
+        [
+            first_ratio,
+            second_ratio,
+            PlaneImageRatios::default(),
+            PlaneImageRatios::default(),
+        ]
     }
 }
