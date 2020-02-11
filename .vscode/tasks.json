@@ -59,6 +59,9 @@
                 "Build feet fragment shader",
                 "Build line vertex shader",
                 "Build line fragment shader",
+                "Build debug closest hit shader",
+                "Build debug ray generation shader",
+                "Build debug miss shader",
             ]
         },
         {
@@ -137,6 +140,39 @@
                 // works in windows powershell
                 "command": "cd shader ; glslangValidator -V line.frag -o line.frag.spv",
             }
-        }
+        },
+        {
+            "type": "shell",
+            "label": "Build debug closest hit shader",
+            "linux": {
+                "command": "cd shader/debug/ && glslangValidator -V closesthit.rchit -o closesthit.rchit.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader/debug ; glslangValidator -V closesthit.rchit -o closesthit.rchit.spv",
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Build debug ray generation shader",
+            "linux": {
+                "command": "cd shader/debug/ && glslangValidator -V raygen.rgen -o raygen.rgen.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader/debug ; glslangValidator -V raygen.rgen -o raygen.rgen.spv",
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Build debug miss shader",
+            "linux": {
+                "command": "cd shader/debug/ && glslangValidator -V miss.rmiss -o miss.rmiss.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader/debug ; glslangValidator -V miss.rmiss -o miss.rmiss.spv",
+            }
+        },
     ]
 }

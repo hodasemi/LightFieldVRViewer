@@ -1,0 +1,72 @@
+#version 460
+#extension GL_NV_ray_tracing : require
+
+layout(set = 0, binding = 0) uniform accelerationStructureNV tlas;
+layout(set = 2, binding = 0, rgba8) uniform image2D output_image;
+
+layout (set = 1, binding = 0) uniform View {
+    mat4 inv_proj;
+    mat4 inv_view;
+} view;
+
+struct RayPayload {
+	vec4 color;
+	float distance;
+};
+
+layout(location = 0) rayPayloadNV RayPayload pay_load;
+
+vec4 blending(vec4 current, vec4 new) {
+    float current_alpha_factor = current.w;
+    float new_alpha_factor = (1.0 - current.w) * new.w;
+
+    vec3 color = (current.xyz * current_alpha_factor) + (new.xyz * new_alpha_factor);
+    float alpha = current_alpha_factor + new_alpha_factor;
+
+    return vec4(color, alpha);
+}
+
+void main() {
+    const vec2 pixel_center = vec2(gl_LaunchIDNV.xy) + vec2(0.5);
+    const vec2 in_uv = pixel_center / vec2(gl_LaunchSizeNV.xy);
+    vec2 d = in_uv * 2.0 - 1.0;
+
+    vec4 origin = view.inv_view * vec4(0.0, 0.0, 0.0, 1.0);
+    vec4 target = view.inv_proj * vec4(d.x, d.y, 1.0, 1.0);
+    vec4 direction = view.inv_view * vec4(normalize(target.xyz), 0.0);
+
+    uint ray_flags = gl_RayFlagsOpaqueNV;
+    uint cull_mask = 0xff;
+    const int pay_load_index = 0;
+    int hit_shader_index = 0;
+    int miss_shader_index = 0;
+    int sbt_record_stride = 0;
+    float tmin = 0.001;
+    float tmax = 10000.0;
+
+    // cast a ray
+    traceNV(
+        tlas,
+        ray_flags,
+        cull_mask,
+        hit_shader_index,
+        sbt_record_stride,
+        miss_shader_index,
+        origin.xyz,
+        tmin,
+        direction.xyz,
+        tmax,
+        pay_load_index
+    );
+
+    vec4 color = vec4(0.0);
+
+    if (pay_load.distance > 0.0) {
+        color = blending(color, pay_load.color);
+    }
+
+    // blend background as last layer
+    color = blending(color, imageLoad(output_image, ivec2(gl_LaunchIDNV.xy)));
+
+    imageStore(output_image, ivec2(gl_LaunchIDNV.xy), color);
+}
