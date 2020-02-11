@@ -225,9 +225,9 @@ impl LightFieldData {
             let mut image_locations = Vec::new();
 
             for image in quantized_plane.images.into_iter() {
-                let left_ratio = horizontal_base_line_ratio * image.frustum.0 as f32;
+                let left_ratio = horizontal_base_line_ratio * image.frustum.1 as f32;
                 let right_ratio = left_ratio + width_ratio;
-                let top_ratio = vertical_base_line_ratio * image.frustum.1 as f32;
+                let top_ratio = vertical_base_line_ratio * image.frustum.0 as f32;
                 let bottom_ratio = top_ratio + height_ration;
 
                 let ratios = PlaneImageRatios {
