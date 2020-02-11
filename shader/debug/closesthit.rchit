@@ -117,7 +117,17 @@ void interpolate_images(vec2 hit_bary) {
         );
     }
 
-    set_pay_load(color / float(i));
+    color = color / float(i);
+
+    if (color.w == 0.0) {
+        if (image_infos.data.length() == 1 && !check_inside(image_infos.data[0].bound, hit_bary)) {
+            color = vec4(0.0, 1.0, 0.0, 1.0);
+        } else {
+            color = vec4(1.0, 0.0, 0.0, 1.0);
+        }
+    }
+
+    set_pay_load(color);
 }
 
 void main() {

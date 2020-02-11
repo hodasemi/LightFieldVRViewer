@@ -23,6 +23,7 @@ pub struct LayerDebugger {
     plane_buffer: Arc<Buffer<DebugPlane>>,
     image_info_buffer: Mutex<Arc<Buffer<DebugImageInfo>>>,
     tlas: Mutex<Option<Arc<AccelerationStructure>>>,
+    specific_image: AtomicUsize,
 }
 
 impl LayerDebugger {
@@ -99,6 +100,7 @@ impl LayerDebugger {
             plane_buffer,
             image_info_buffer: Mutex::new(image_info_buffer),
             tlas: Mutex::new(None),
+            specific_image: AtomicUsize::new(9),
         })
     }
 
@@ -163,6 +165,46 @@ impl LayerDebugger {
 
                 println!("debugging {}. layer", self.layer_index.load(SeqCst));
             }
+            Keycode::Num1 => {
+                self.specific_image.store(0, SeqCst);
+                println!("specific image: {}", self.specific_image.load(SeqCst))
+            }
+            Keycode::Num2 => {
+                self.specific_image.store(1, SeqCst);
+                println!("specific image: {}", self.specific_image.load(SeqCst))
+            }
+            Keycode::Num3 => {
+                self.specific_image.store(2, SeqCst);
+                println!("specific image: {}", self.specific_image.load(SeqCst))
+            }
+            Keycode::Num4 => {
+                self.specific_image.store(3, SeqCst);
+                println!("specific image: {}", self.specific_image.load(SeqCst))
+            }
+            Keycode::Num5 => {
+                self.specific_image.store(4, SeqCst);
+                println!("specific image: {}", self.specific_image.load(SeqCst))
+            }
+            Keycode::Num6 => {
+                self.specific_image.store(5, SeqCst);
+                println!("specific image: {}", self.specific_image.load(SeqCst))
+            }
+            Keycode::Num7 => {
+                self.specific_image.store(6, SeqCst);
+                println!("specific image: {}", self.specific_image.load(SeqCst))
+            }
+            Keycode::Num8 => {
+                self.specific_image.store(7, SeqCst);
+                println!("specific image: {}", self.specific_image.load(SeqCst))
+            }
+            Keycode::Num9 => {
+                self.specific_image.store(8, SeqCst);
+                println!("specific image: {}", self.specific_image.load(SeqCst))
+            }
+            Keycode::Num0 => {
+                self.specific_image.store(9, SeqCst);
+                println!("specific image: all images")
+            }
             _ => (),
         }
     }
@@ -212,7 +254,7 @@ impl LayerDebugger {
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             )
             .set_usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-            .set_data(&Self::create_image_data(plane))
+            .set_data(&self.create_image_data(plane))
             .build(command_buffer.device().clone())?;
 
         let tlas = AccelerationStructure::top_level()
@@ -245,17 +287,30 @@ impl LayerDebugger {
         &light_field.planes[index]
     }
 
-    fn create_image_data(plane: &Plane) -> Vec<DebugImageInfo> {
-        plane
-            .image_infos
-            .iter()
-            .map(|image_info| DebugImageInfo {
+    fn create_image_data(&self, plane: &Plane) -> Vec<DebugImageInfo> {
+        let index = self.specific_image.load(SeqCst);
+
+        if index == 9 {
+            plane
+                .image_infos
+                .iter()
+                .map(|image_info| DebugImageInfo {
+                    bound: image_info.ratios,
+                    image_index: image_info.image_index,
+
+                    padding: [0; 3],
+                })
+                .collect()
+        } else {
+            let image_info = &plane.image_infos[index];
+
+            vec![DebugImageInfo {
                 bound: image_info.ratios,
                 image_index: image_info.image_index,
 
                 padding: [0; 3],
-            })
-            .collect()
+            }]
+        }
     }
 }
 
