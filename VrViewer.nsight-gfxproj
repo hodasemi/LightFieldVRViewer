@@ -57,7 +57,7 @@
         "activity/fd/troubleshooting/threading": false,
         "activity/fd/vulkan/coherentbuffercollection": true,
         "activity/fd/vulkan/forcedvalidationlayers": "VK_LAYER_LUNARG_parameter_validation; VK_LAYER_LUNARG_object_tracker; VK_LAYER_LUNARG_core_validation",
-        "activity/fd/vulkan/forcevalidation": false,
+        "activity/fd/vulkan/forcevalidation": true,
         "activity/fd/vulkan/reserveheap": "0",
         "activity/fd/vulkan/revisionzerodatacollection": true,
         "activity/fd/vulkan/safeobjectlookup": "Auto",

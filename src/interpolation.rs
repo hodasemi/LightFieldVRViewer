@@ -212,12 +212,13 @@ impl<'a> Interpolation<'a> {
 
         for (light_field_weight, light_field) in light_fields.iter() {
             for plane in light_field.planes.iter() {
-                if let Some(viewer_point) = Self::plane_line_intersection(
+                if let Some(intersection_point) = Self::plane_line_intersection(
                     &plane,
                     my_position,
                     -plane.info.normal.truncate(),
                 ) {
-                    let viewer_barycentric = Self::calculate_barycentrics(&plane, viewer_point);
+                    let viewer_barycentric =
+                        Self::calculate_barycentrics(&plane, intersection_point);
 
                     /*
                                             |                   |
@@ -482,7 +483,7 @@ impl<'a> Interpolation<'a> {
         let y = Self::distance_to_line(plane.info.top_left.truncate(), horizontal_direction, point)
             / vertical_direction.magnitude();
 
-        vec2(x, y)
+        vec2(y, x)
     }
 
     fn distance_to_line(
@@ -600,11 +601,11 @@ impl<'a> Interpolation<'a> {
                     Self::two_ratios(above_ratio, below_ratio),
                 ))
             }
-            // only left could be found
+            // only above could be found
             (Some((index, weight, ratio)), None) => {
                 Self::selector_of_one(Some((index, weight, ratio)), "")
             }
-            // only right could be found
+            // only above could be found
             (None, Some((index, weight, ratio))) => {
                 Self::selector_of_one(Some((index, weight, ratio)), "")
             }

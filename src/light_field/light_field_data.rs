@@ -96,7 +96,7 @@ pub struct Plane {
     pub right_top: Vector3<f32>,
     pub right_bottom: Vector3<f32>,
 
-    // (image, corner points, center)
+    // (image, extents, center)
     pub content: Vec<(Arc<Image>, PlaneImageRatios, Vector2<f32>)>,
 }
 
@@ -115,9 +115,9 @@ struct PlaneImage {
     depth_values: Vec<f32>,
 }
 
-struct DisparityPlane {
+struct QuantizedPlane {
     images: Vec<PlaneImage>,
-    disparity_index: usize,
+    layer_index: usize,
 }
 
 impl LightFieldData {
@@ -140,11 +140,11 @@ impl LightFieldData {
             sorted_frustums.insert(frustum.position(), frustum);
         }
 
-        // sort all images by their respective disparity layers
-        let mut disparity_planes: Vec<DisparityPlane> = Vec::new();
+        // sort all images by their respective layer
+        let mut quantized_planes: Vec<QuantizedPlane> = Vec::new();
 
         for (images, x, y) in image_data.into_iter() {
-            for (image, disparity_index, depth_values) in images.into_iter() {
+            for (image, layer_index, depth_values) in images.into_iter() {
                 // create plane image
                 let plane_image = PlaneImage {
                     image,
@@ -152,24 +152,24 @@ impl LightFieldData {
                     depth_values,
                 };
 
-                // search for disparity index
-                match disparity_planes
+                // search for layer index
+                match quantized_planes
                     .iter()
-                    .position(|plane| plane.disparity_index == disparity_index)
+                    .position(|plane| plane.layer_index == layer_index)
                 {
-                    // if we can find the disparity layer, just add the plane image
-                    Some(index) => disparity_planes[index].images.push(plane_image),
+                    // if we can find the layer, just add the plane image
+                    Some(index) => quantized_planes[index].images.push(plane_image),
 
-                    // if we couldn't find the disparity layer, add layer and image
-                    None => disparity_planes.push(DisparityPlane {
+                    // if we couldn't find the layer, push layer and image
+                    None => quantized_planes.push(QuantizedPlane {
                         images: vec![plane_image],
-                        disparity_index,
+                        layer_index,
                     }),
                 }
             }
         }
 
-        let mut planes = Vec::with_capacity(disparity_planes.len());
+        let mut planes = Vec::with_capacity(quantized_planes.len());
 
         // (1) find corner frustums
         let left_top_frustum = &sorted_frustums[&(0, 0)];
@@ -184,12 +184,12 @@ impl LightFieldData {
             right_bottom_frustum,
         );
 
-        for disparity_plane in disparity_planes.into_iter() {
-            // calculate average depth of disparity layer
+        for quantized_plane in quantized_planes.into_iter() {
+            // calculate average depth of the layer
             let mut total_depth = 0.0;
             let mut total_count = 0;
 
-            for image in disparity_plane.images.iter() {
+            for image in quantized_plane.images.iter() {
                 total_depth += image.depth_values[image.depth_values.len() / 2];
                 total_count += 1;
             }
@@ -224,7 +224,7 @@ impl LightFieldData {
 
             let mut image_locations = Vec::new();
 
-            for image in disparity_plane.images.into_iter() {
+            for image in quantized_plane.images.into_iter() {
                 let left_ratio = horizontal_base_line_ratio * image.frustum.0 as f32;
                 let right_ratio = left_ratio + width_ratio;
                 let top_ratio = vertical_base_line_ratio * image.frustum.1 as f32;

@@ -118,7 +118,7 @@ fn create_vr_context() -> VerboseResult<Arc<Context>> {
 fn create_desktop_context(enable_vsync: bool) -> VerboseResult<Arc<Context>> {
     let context_builder = Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
-            debugging: true,
+            debugging: false,
             renderdoc: false,
             steam_layer: false,
             use_util: false,

@@ -4,13 +4,6 @@
 
 const float INFINITY = 1.0 / 0.0;
 
-struct ImageBounds {
-    float left;
-    float right;
-    float top;
-    float bottom;
-};
-
 struct PlaneInfo {
     vec4 top_left;
     vec4 top_right;
@@ -21,7 +14,7 @@ struct PlaneInfo {
 
     ivec4 indices;
     vec4 bary;
-    ImageBounds bounds[4];
+    vec4 bounds[4];
 };
 
 layout(set = 0, binding = 1) readonly buffer PlaneInfos {
@@ -64,22 +57,21 @@ vec2 calculate_barycentrics(PlaneInfo plane, vec3 point) {
     return barycentrics;
 }
 
-vec2 normalized_uv(ImageBounds bounds, vec2 bary) {
-    float u = (bary.x - bounds.left) / (bounds.right - bounds.left);
-    float v = (bary.y - bounds.top) / (bounds.bottom - bounds.top);
+vec2 normalized_uv(vec4 bounds, vec2 bary) {
+    float u = (bary.x - bounds.x) / (bounds.y - bounds.x);
+    float v = (bary.y - bounds.z) / (bounds.w - bounds.z);
 
-    // swap u and v
     return vec2(v, u);
 }
 
-bool check_inside(ImageBounds bounds, vec2 bary) {
-    return (bary.x >= bounds.left) &&
-        (bary.x <= bounds.right) &&
-        (bary.y >= bounds.top) &&
-        (bary.y <= bounds.bottom);
+bool check_inside(vec4 bounds, vec2 bary) {
+    return (bary.x >= bounds.x) &&
+        (bary.x <= bounds.y) &&
+        (bary.y >= bounds.z) &&
+        (bary.y <= bounds.w);
 }
 
-vec4 single_image(int index, vec2 hit_bary, ImageBounds bounds) {
+vec4 single_image(int index, vec2 hit_bary, vec4 bounds) {
     if (check_inside(bounds, hit_bary)) {
         vec2 uv = normalized_uv(bounds, hit_bary);
         return texture(images[nonuniformEXT(index)], uv);
