@@ -38,7 +38,7 @@ impl ViewEmulator {
     ) -> Self {
         let angle = Deg(0.0);
 
-        let position = Point3::new(0.0, 0.0, 0.0);
+        let position = Point3::new(0.0, 1.6, 0.0);
         let direction = Self::direction(angle);
 
         let simulation_transform = VRTransformations {

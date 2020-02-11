@@ -15,7 +15,9 @@ layout(set = 0, binding = 1) readonly buffer Plane {
 
 struct ImageInfo {
     vec4 bound;
-    int image_index;
+    uint image_index;
+
+    int padding[3];
 };
 
 layout(set = 0, binding = 2) readonly buffer ImageInfos {
@@ -68,7 +70,7 @@ bool check_inside(vec4 bounds, vec2 bary) {
         (bary.y <= bounds.w);
 }
 
-vec4 single_image(int index, vec2 hit_bary, vec4 bounds) {
+vec4 single_image(uint index, vec2 hit_bary, vec4 bounds) {
     if (check_inside(bounds, hit_bary)) {
         vec2 uv = normalized_uv(bounds, hit_bary);
         return texture(images[nonuniformEXT(index)], uv);

@@ -9,15 +9,15 @@ use std::iter::IntoIterator;
 use std::ops::IndexMut;
 use std::sync::{Arc, Mutex};
 
-struct LightField {
-    frustum: LightFieldFrustum,
-    direction: Vector3<f32>,
+pub struct LightField {
+    pub frustum: LightFieldFrustum,
+    pub direction: Vector3<f32>,
 
-    planes: Vec<Plane>,
+    pub planes: Vec<Plane>,
 }
 
 impl LightField {
-    pub fn new(
+    fn new(
         queue: &Arc<Mutex<Queue>>,
         command_buffer: &Arc<CommandBuffer>,
         data: impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
@@ -44,11 +44,11 @@ impl LightField {
     }
 }
 
-struct Plane {
-    info: PlaneInfo,
-    image_infos: Vec<PlaneImageInfo>,
-    _vertex_buffer: Arc<Buffer<Vector3<f32>>>,
-    blas: Arc<AccelerationStructure>,
+pub struct Plane {
+    pub info: PlaneInfo,
+    pub image_infos: Vec<PlaneImageInfo>,
+    pub vertex_buffer: Arc<Buffer<Vector3<f32>>>,
+    pub blas: Arc<AccelerationStructure>,
 }
 
 impl Plane {
@@ -89,7 +89,7 @@ impl Plane {
         Ok(Plane {
             info: plane_info,
             image_infos,
-            _vertex_buffer: gpu_buffer,
+            vertex_buffer: gpu_buffer,
             blas,
         })
     }
@@ -178,7 +178,7 @@ impl CPUInterpolation {
 }
 
 pub struct Interpolation<'a> {
-    light_fields: &'a [LightField],
+    pub light_fields: &'a [LightField],
     last_position: &'a Mutex<Vector3<f32>>,
     last_result: &'a Mutex<Option<Arc<AccelerationStructure>>>,
 }

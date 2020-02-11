@@ -2,7 +2,7 @@ use context::prelude::*;
 use context::ContextObject;
 
 use std::sync::{
-    atomic::{AtomicU32, Ordering::SeqCst},
+    atomic::{AtomicBool, AtomicU32, Ordering::SeqCst},
     Arc, Mutex,
 };
 use std::time::Duration;
@@ -10,6 +10,7 @@ use std::time::Duration;
 use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, Vector2, Vector3, Vector4};
 
 use super::{
+    debug::LayerDebugger,
     feet_renderer::FeetRenderer,
     interpolation::{CPUInterpolation, Interpolation},
     light_field::{light_field_data::PlaneImageRatios, LightField},
@@ -42,6 +43,11 @@ pub struct LightFieldViewer {
 
     interpolation: CPUInterpolation,
     feet: FeetRenderer,
+
+    // debugging
+    enable_debugging_mode: AtomicBool,
+
+    layer_debugger: LayerDebugger,
 }
 
 impl LightFieldViewer {
@@ -127,6 +133,8 @@ impl LightFieldViewer {
             .render_core()
             .set_clear_color([0.2, 0.2, 0.2, 1.0])?;
 
+        let layer_debugger = LayerDebugger::new(context, &images, desc, &output_image_desc_layout)?;
+
         Ok(Arc::new(LightFieldViewer {
             context: context.clone(),
 
@@ -149,6 +157,10 @@ impl LightFieldViewer {
 
             interpolation,
             feet: feet_renderer,
+
+            // debugging
+            enable_debugging_mode: AtomicBool::new(false),
+            layer_debugger,
         }))
     }
 }
@@ -169,8 +181,17 @@ impl ContextObject for LightFieldViewer {
         if let TargetMode::Single(_) = self.view_buffers {
             match event {
                 PresentationEventType::KeyDown(key) => match key {
+                    // close app on escape
                     Keycode::Escape => self.context.close()?,
-                    _ => self.view_emulator.lock()?.on_key_down(key),
+                    // toggle debugging mode on F7
+                    Keycode::F7 => self
+                        .enable_debugging_mode
+                        .store(!self.enable_debugging_mode.load(SeqCst), SeqCst),
+                    // pass through
+                    _ => {
+                        self.layer_debugger.handle_input(key);
+                        self.view_emulator.lock()?.on_key_down(key);
+                    }
                 },
                 PresentationEventType::KeyUp(key) => self.view_emulator.lock()?.on_key_up(key),
                 _ => (),
@@ -265,26 +286,38 @@ impl TScene for LightFieldViewer {
 
                 let inverted_transform = transform.invert()?;
 
-                if let Some(tlas) = Self::update_plane_buffer(
-                    command_buffer,
-                    &self.context,
-                    plane_buffer,
-                    inverted_transform.view,
-                    inverted_transform.proj,
-                    interpolation,
-                )? {
-                    as_descriptor.update(&[DescriptorWrite::acceleration_structures(0, &[&tlas])]);
-
-                    *self.acceleration_structures.lock()? = Some(TargetMode::Single(Some(tlas)));
-
-                    self.render(
-                        *index,
+                if self.enable_debugging_mode.load(SeqCst) {
+                    self.render_debug(
                         command_buffer,
-                        example_descriptor,
-                        as_descriptor,
-                        target_images,
+                        interpolation,
+                        &target_images[*index],
                         image_descriptor,
+                        example_descriptor,
                     )?;
+                } else {
+                    if let Some(tlas) = Self::update_plane_buffer(
+                        command_buffer,
+                        &self.context,
+                        plane_buffer,
+                        inverted_transform.view,
+                        inverted_transform.proj,
+                        interpolation,
+                    )? {
+                        as_descriptor
+                            .update(&[DescriptorWrite::acceleration_structures(0, &[&tlas])]);
+
+                        *self.acceleration_structures.lock()? =
+                            Some(TargetMode::Single(Some(tlas)));
+
+                        self.render(
+                            *index,
+                            command_buffer,
+                            example_descriptor,
+                            as_descriptor,
+                            target_images,
+                            image_descriptor,
+                        )?;
+                    }
                 }
             }
             (
@@ -413,6 +446,30 @@ impl LightFieldViewer {
         command_buffer.trace_rays_sbt(&self.sbt, image.width(), image.height(), 1);
 
         command_buffer.set_full_image_layout(image, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)?;
+
+        Ok(())
+    }
+
+    fn render_debug(
+        &self,
+        command_buffer: &Arc<CommandBuffer>,
+        interpolation: &Interpolation,
+        image: &Arc<Image>,
+        image_descriptor_set: &Arc<DescriptorSet>,
+        view_descriptor_set: &Arc<DescriptorSet>,
+    ) -> VerboseResult<()> {
+        image_descriptor_set.update(&[DescriptorWrite::storage_images(0, &[image])
+            .change_image_layout(VK_IMAGE_LAYOUT_GENERAL)]);
+
+        command_buffer.set_full_image_layout(image, VK_IMAGE_LAYOUT_GENERAL)?;
+
+        self.layer_debugger.render(
+            command_buffer,
+            image_descriptor_set,
+            view_descriptor_set,
+            interpolation.light_fields,
+            image,
+        )?;
 
         Ok(())
     }
