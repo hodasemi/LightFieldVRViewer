@@ -20,11 +20,16 @@ const int MAX_ITERATION = 50;
 
 layout(location = 0) rayPayloadNV RayPayload pay_load;
 
-vec4 blending(vec4 current, vec4 new) {
-    float current_alpha_factor = current.w;
-    float new_alpha_factor = (1.0 - current.w) * new.w;
+float new_alpha(float current, float new) {
+    // return (1.0 - current.w) * new.w;
+    return min(1.0 - current, new);
+}
 
-    vec3 color = (current.xyz * current_alpha_factor) + (new.xyz * new_alpha_factor);
+vec4 alpha_blending(vec4 current, vec4 new) {
+    float current_alpha_factor = current.w;
+    float new_alpha_factor = new_alpha(current.w, new.w);
+
+    vec3 color = (current.xyz * 1.0) + (new.xyz * new_alpha_factor);
     float alpha = current_alpha_factor + new_alpha_factor;
 
     return vec4(color, alpha);
@@ -79,7 +84,7 @@ void main() {
         vec4 factored_color = vec4(pay_load.color.xyz, pay_load.color.w * pay_load.factor);
 
         if (factored_color.w > 0.0) {
-            color = blending(color, factored_color);
+            color = alpha_blending(color, factored_color);
         }
 
         // break if color almost fully opaque
@@ -92,7 +97,7 @@ void main() {
     }
 
     // blend background as last layer
-    color = blending(color, imageLoad(output_image, ivec2(gl_LaunchIDNV.xy)));
+    color = alpha_blending(color, imageLoad(output_image, ivec2(gl_LaunchIDNV.xy)));
 
     imageStore(output_image, ivec2(gl_LaunchIDNV.xy), color);
 }
