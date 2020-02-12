@@ -167,7 +167,7 @@ impl LightField {
                 config.extrinsics.vertical_camera_count as usize,
             ),
             config.extrinsics.baseline(),
-            config.extrinsics.focus_distance,
+            depth_info.max,
         )?;
 
         println!("finished loading light field {}", dir);
