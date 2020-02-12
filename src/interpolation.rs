@@ -483,7 +483,7 @@ impl<'a> Interpolation<'a> {
         let y = Self::distance_to_line(plane.info.top_left.truncate(), horizontal_direction, point)
             / vertical_direction.magnitude();
 
-        vec2(y, x)
+        vec2(x, y)
     }
 
     fn distance_to_line(
