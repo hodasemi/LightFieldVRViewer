@@ -99,6 +99,7 @@ pub struct CPUInterpolation {
     light_fields: Vec<LightField>,
 
     last_position: TargetMode<Mutex<Vector3<f32>>>,
+    last_direction: TargetMode<Mutex<Vector3<f32>>>,
 
     last_result: TargetMode<Mutex<Option<Arc<AccelerationStructure>>>>,
 }
@@ -136,6 +137,16 @@ impl CPUInterpolation {
             ),
         };
 
+        let last_direction = match mode {
+            TargetMode::Single(_) => {
+                TargetMode::Single(Mutex::new(Vector3::new(f32::MAX, f32::MAX, f32::MAX)))
+            }
+            TargetMode::Stereo(_, _) => TargetMode::Stereo(
+                Mutex::new(Vector3::new(f32::MAX, f32::MAX, f32::MAX)),
+                Mutex::new(Vector3::new(f32::MAX, f32::MAX, f32::MAX)),
+            ),
+        };
+
         let last_result = match mode {
             TargetMode::Single(_) => TargetMode::Single(Mutex::new(None)),
             TargetMode::Stereo(_, _) => TargetMode::Stereo(Mutex::new(None), Mutex::new(None)),
@@ -144,31 +155,38 @@ impl CPUInterpolation {
         Ok(CPUInterpolation {
             light_fields,
             last_position,
+            last_direction,
             last_result,
         })
     }
 
     pub fn interpolation(&self) -> TargetMode<Interpolation<'_>> {
-        match (&self.last_position, &self.last_result) {
-            (TargetMode::Single(last_position), TargetMode::Single(last_result)) => {
-                TargetMode::Single(Interpolation {
-                    light_fields: &self.light_fields,
-                    last_position: last_position,
-                    last_result: last_result,
-                })
-            }
+        match (&self.last_position, &self.last_direction, &self.last_result) {
+            (
+                TargetMode::Single(last_position),
+                TargetMode::Single(last_direction),
+                TargetMode::Single(last_result),
+            ) => TargetMode::Single(Interpolation {
+                light_fields: &self.light_fields,
+                last_position,
+                last_direction,
+                last_result,
+            }),
             (
                 TargetMode::Stereo(left_last_position, right_last_position),
+                TargetMode::Stereo(left_last_direction, right_last_direction),
                 TargetMode::Stereo(left_last_result, right_last_result),
             ) => TargetMode::Stereo(
                 Interpolation {
                     light_fields: &self.light_fields,
                     last_position: left_last_position,
+                    last_direction: left_last_direction,
                     last_result: left_last_result,
                 },
                 Interpolation {
                     light_fields: &self.light_fields,
                     last_position: right_last_position,
+                    last_direction: right_last_direction,
                     last_result: right_last_result,
                 },
             ),
@@ -180,6 +198,7 @@ impl CPUInterpolation {
 pub struct Interpolation<'a> {
     pub light_fields: &'a [LightField],
     last_position: &'a Mutex<Vector3<f32>>,
+    last_direction: &'a Mutex<Vector3<f32>>,
     last_result: &'a Mutex<Option<Arc<AccelerationStructure>>>,
 }
 
@@ -194,16 +213,27 @@ impl<'a> Interpolation<'a> {
     ) -> VerboseResult<Option<Arc<AccelerationStructure>>> {
         let my_position = (inv_view * vec4(0.0, 0.0, 0.0, 1.0)).truncate();
 
-        let mut last_position = self.last_position.lock()?;
+        let target = inv_proj * DEFAULT_FORWARD.extend(1.0);
+        let direction = inv_view * target.xyz().normalize().extend(0.0);
 
-        if Self::check_pos(*last_position, my_position) {
-            return Ok(self.last_result.lock()?.clone());
+        let my_direction = direction.xyz();
+
+        // scope for freeing lock asap
+        {
+            let mut last_position = self.last_position.lock()?;
+            let mut last_direction = self.last_direction.lock()?;
+
+            if Self::check_eq(*last_position, my_position)
+                && Self::check_eq(*last_direction, my_direction)
+            {
+                return Ok(self.last_result.lock()?.clone());
+            }
+
+            *last_position = my_position;
+            *last_direction = my_direction;
         }
 
-        *last_position = my_position;
-
-        let direction = inv_view * (inv_proj * DEFAULT_FORWARD.extend(1.0)).xyz().extend(1.0);
-        let light_fields = self.gather_light_fields(my_position, direction.xyz().normalize());
+        let light_fields = self.gather_light_fields(my_position, my_direction);
 
         let mut tlas_builder = AccelerationStructure::top_level()
             .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
@@ -370,26 +400,47 @@ impl<'a> Interpolation<'a> {
         position: Vector3<f32>,
         direction: Vector3<f32>,
     ) -> Vec<(f32, &LightField)> {
-        let mut inside_frustum = Vec::new();
+        let mut light_fields = Vec::new();
 
-        // look for light fields where we are inside of
+        let mut proj_direction = direction;
+        proj_direction.y = 0.0;
+        proj_direction = proj_direction.normalize();
+
         for light_field in self.light_fields.iter() {
-            if light_field.frustum.check(position) {
-                inside_frustum.push(light_field);
+            // skip if not inside frustum
+            if !light_field.frustum.check(position) {
+                continue;
             }
+
+            let mut proj_light_field_direction = light_field.direction;
+            proj_light_field_direction.y = 0.0;
+            proj_light_field_direction = proj_light_field_direction.normalize();
+
+            let angle = proj_direction.dot(proj_light_field_direction);
+
+            // skip if back side
+            if angle < 0.0 {
+                continue;
+            }
+
+            light_fields.push((angle, light_field));
         }
 
-        if inside_frustum.is_empty() {
-            let sorted_fields = Self::sort_by_angle(self.light_fields, direction);
-            Self::select_and_weight(&sorted_fields)
-        } else if inside_frustum.len() == 1 {
-            inside_frustum
+        light_fields.sort_by(|(left_angle, _), (right_angle, _)| {
+            left_angle
+                .partial_cmp(right_angle)
+                .expect("failed comparing floats")
+        });
+
+        if light_fields.is_empty() {
+            light_fields
+        } else if light_fields.len() == 1 {
+            light_fields
                 .iter()
-                .map(|light_field| (1.0, *light_field))
+                .map(|(_, light_field)| (1.0, *light_field))
                 .collect()
         } else {
-            let sorted_fields = Self::sort_by_angle(inside_frustum, direction);
-            Self::select_and_weight(&sorted_fields)
+            Self::select_and_weight(&light_fields)
         }
     }
 
@@ -464,7 +515,7 @@ impl<'a> Interpolation<'a> {
         Some(origin + (direction * distance))
     }
 
-    fn check_pos(p1: Vector3<f32>, p2: Vector3<f32>) -> bool {
+    fn check_eq(p1: Vector3<f32>, p2: Vector3<f32>) -> bool {
         Self::almost_eq(p1.x, p2.x) && Self::almost_eq(p1.y, p2.y) && Self::almost_eq(p1.z, p2.z)
     }
 
