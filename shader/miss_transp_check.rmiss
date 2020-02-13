@@ -9,4 +9,6 @@ struct RayPayload {
 
 layout(location = 0) rayPayloadInNV RayPayload pay_load;
 
-void main() {}
+void main() {
+    pay_load.distance = -1.0;
+}
