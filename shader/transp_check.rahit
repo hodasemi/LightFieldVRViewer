@@ -126,15 +126,15 @@ void interpolate_images(PlaneInfo plane, vec2 hit_bary) {
         color = bilinear(plane.bary.xy, first, second, third, fourth);
     }
 
-    set_pay_load(color);
+    if (color.w > 0.0) {
+        set_pay_load(color);
+    }
 }
 
 void main() {
     PlaneInfo plane = get_plane();
 
-    pay_load.distance = 0.0;
-    pay_load.color = vec4(0.0);
-    pay_load.factor = plane.bary.z;
+    pay_load.distance = -1.0;
 
     vec3 point = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
 

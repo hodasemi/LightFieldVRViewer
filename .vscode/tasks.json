@@ -62,6 +62,8 @@
                 "Build debug closest hit shader",
                 "Build debug ray generation shader",
                 "Build debug miss shader",
+                "Build miss transparency check shader",
+                "Build anyhit transparency check shader",
             ]
         },
         {
@@ -95,6 +97,28 @@
             "windows": {
                 // works in windows powershell
                 "command": "cd shader ; glslangValidator -V miss.rmiss -o miss.rmiss.spv",
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Build miss transparency check shader",
+            "linux": {
+                "command": "cd shader/ && glslangValidator -V miss_transp_check.rmiss -o miss_transp_check.rmiss.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader ; glslangValidator -V miss_transp_check.rmiss -o miss_transp_check.rmiss.spv",
+            }
+        },
+        {
+            "type": "shell",
+            "label": "Build anyhit transparency check shader",
+            "linux": {
+                "command": "cd shader/ && glslangValidator -V transp_check.rahit -o transp_check.rahit.spv",
+            },
+            "windows": {
+                // works in windows powershell
+                "command": "cd shader ; glslangValidator -V transp_check.rahit -o transp_check.rahit.spv",
             }
         },
         {

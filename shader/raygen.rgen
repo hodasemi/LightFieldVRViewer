@@ -12,7 +12,6 @@ layout (set = 1, binding = 0) uniform View {
 struct RayPayload {
 	vec4 color;
 	float distance;
-    float cos;
     float factor;
 };
 
@@ -76,10 +75,6 @@ void main() {
             break;
         }
 
-        if (pay_load.cos <= 0.0) {
-            continue;
-        }
-
         // vec4 cos_color = vec4(pay_load.color.xyz, pay_load.color.w * pay_load.cos);
         vec4 factored_color = vec4(pay_load.color.xyz, pay_load.color.w * pay_load.factor);
 
@@ -87,8 +82,8 @@ void main() {
             color = alpha_blending(color, factored_color);
         }
 
-        // break if color almost fully opaque
-        if (color.w >= 0.95) {
+        // break if color fully opaque
+        if (color.w == 1.0) {
             break;
         }
 
