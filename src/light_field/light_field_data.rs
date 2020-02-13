@@ -65,13 +65,13 @@ impl LightFieldFrustum {
 }
 
 #[derive(Debug, Clone)]
-struct FrustumPlane {
-    point: Vector3<f32>,
-    normal: Vector3<f32>,
+pub struct FrustumPlane {
+    pub point: Vector3<f32>,
+    pub normal: Vector3<f32>,
 }
 
 impl FrustumPlane {
-    fn new(
+    pub fn new(
         point_in_plane: Vector3<f32>,
         first_direction: Vector3<f32>,
         second_direction: Vector3<f32>,
@@ -84,7 +84,7 @@ impl FrustumPlane {
         }
     }
 
-    fn is_above(&self, p: Vector3<f32>) -> bool {
+    pub fn is_above(&self, p: Vector3<f32>) -> bool {
         self.normal.dot(self.point - p) > 0.0
     }
 }

@@ -10,6 +10,7 @@ use std::time::Duration;
 use cgmath::{vec3, vec4, Deg, InnerSpace, Matrix4, Vector2, Vector3, Vector4};
 
 use super::{
+    config::Config,
     debug::LayerDebugger,
     feet_renderer::FeetRenderer,
     interpolation::{CPUInterpolation, Interpolation},
@@ -123,6 +124,24 @@ impl LightFieldViewer {
                     device.clone(),
                     include_bytes!("../shader/closesthit.rchit.spv"),
                     ShaderType::ClosestHit,
+                )?],
+                None,
+                vec![None],
+            )
+            .add_shader(
+                ShaderModule::from_slice(
+                    device.clone(),
+                    include_bytes!("../shader/miss_transp_check.rmiss.spv"),
+                    ShaderType::Miss,
+                )?,
+                None,
+                None,
+            )
+            .add_hit_shaders(
+                vec![ShaderModule::from_slice(
+                    device.clone(),
+                    include_bytes!("../shader/transp_check.rahit.spv"),
+                    ShaderType::AnyHit,
                 )?],
                 None,
                 vec![None],
@@ -537,13 +556,13 @@ impl LightFieldViewer {
             .add_layout_binding(
                 1,
                 VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
+                VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV | VK_SHADER_STAGE_ANY_HIT_BIT_NV,
                 0,
             )
             .add_layout_binding(
                 2,
                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
+                VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV | VK_SHADER_STAGE_ANY_HIT_BIT_NV,
                 VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT,
             )
             .change_descriptor_count(images.len() as u32)
@@ -719,6 +738,7 @@ impl LightFieldViewer {
         for light_field in light_fields.into_iter() {
             let frustum = light_field.frustum();
             let direction = light_field.direction();
+            let position = Config::swap_axis(light_field.config.extrinsics.camera_center);
             let planes = light_field.into_data();
 
             let mut inner_planes = Vec::with_capacity(planes.len());
@@ -772,7 +792,7 @@ impl LightFieldViewer {
                 inner_planes.push((plane_info, vertices, image_infos));
             }
 
-            light_field_infos.push((inner_planes, frustum, direction));
+            light_field_infos.push((inner_planes, frustum, direction, position));
         }
 
         // --- create plane info buffer ---

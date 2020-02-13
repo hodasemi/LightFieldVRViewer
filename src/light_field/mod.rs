@@ -14,7 +14,7 @@ use alpha_maps::AlphaMaps;
 use light_field_data::{LightFieldData, LightFieldFrustum, Plane};
 use light_field_frustum::CameraFrustum;
 
-use cgmath::{Array, InnerSpace, Vector3};
+use cgmath::{InnerSpace, Vector3};
 
 use pxm::PFM;
 
@@ -134,15 +134,15 @@ impl LightField {
         }
 
         // swap y and z coordinates
-        let center = Self::swap_axis(config.extrinsics.camera_center);
+        let center = Config::swap_axis(config.extrinsics.camera_center);
 
-        let direction = Self::swap_axis(
+        let direction = Config::swap_axis(
             (config.extrinsics.camera_rotation_matrix() * DEFAULT_FORWARD.extend(1.0))
                 .truncate()
                 .normalize(),
         );
 
-        let up = Self::swap_axis(
+        let up = Config::swap_axis(
             (config.extrinsics.camera_rotation_matrix() * UP.extend(1.0))
                 .truncate()
                 .normalize(),
@@ -239,13 +239,5 @@ impl LightField {
 
     pub fn is_empty(&self) -> bool {
         self.light_field_data.is_empty()
-    }
-
-    #[inline]
-    fn swap_axis(mut v: Vector3<f32>) -> Vector3<f32> {
-        v.swap_elements(1, 2);
-        v.z = -v.z;
-
-        v
     }
 }

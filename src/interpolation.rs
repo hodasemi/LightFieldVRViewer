@@ -1,8 +1,8 @@
 use cgmath::{vec2, vec4, InnerSpace, Matrix4, Vector2, Vector3, Vector4, Zero};
 use context::prelude::*;
 
-use super::light_field::light_field_data::{LightFieldFrustum, PlaneImageRatios};
-use super::light_field_viewer::{PlaneImageInfo, PlaneInfo, DEFAULT_FORWARD};
+use super::light_field::light_field_data::{FrustumPlane, LightFieldFrustum, PlaneImageRatios};
+use super::light_field_viewer::{PlaneImageInfo, PlaneInfo, DEFAULT_FORWARD, UP};
 
 use std::f32;
 use std::iter::IntoIterator;
@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 pub struct LightField {
     pub frustum: LightFieldFrustum,
     pub direction: Vector3<f32>,
+    pub position: Vector3<f32>,
 
     pub planes: Vec<Plane>,
 }
@@ -23,6 +24,7 @@ impl LightField {
         data: impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
         frustum: LightFieldFrustum,
         direction: Vector3<f32>,
+        position: Vector3<f32>,
     ) -> VerboseResult<Self> {
         let mut planes = Vec::new();
 
@@ -40,6 +42,7 @@ impl LightField {
             frustum,
             planes,
             direction,
+            position,
         })
     }
 }
@@ -112,18 +115,20 @@ impl CPUInterpolation {
             impl IntoIterator<Item = (PlaneInfo, [Vector3<f32>; 6], Vec<PlaneImageInfo>)>,
             LightFieldFrustum,
             Vector3<f32>,
+            Vector3<f32>,
         )>,
         mode: TargetMode<T>,
     ) -> VerboseResult<Self> {
         let mut light_fields = Vec::with_capacity(interpolation_infos.len());
 
-        for (data, frustum, direction) in interpolation_infos.into_iter() {
+        for (data, frustum, direction, position) in interpolation_infos.into_iter() {
             light_fields.push(LightField::new(
                 queue,
                 command_buffer,
                 data,
                 frustum,
                 direction,
+                position,
             )?);
         }
 
@@ -400,7 +405,10 @@ impl<'a> Interpolation<'a> {
         position: Vector3<f32>,
         direction: Vector3<f32>,
     ) -> Vec<(f32, &LightField)> {
-        let mut light_fields = Vec::new();
+        let mut left_light_field = None;
+        let mut right_light_field = None;
+
+        let viewer_plane = FrustumPlane::new(position, UP, direction);
 
         let mut proj_direction = direction;
         proj_direction.y = 0.0;
@@ -423,65 +431,57 @@ impl<'a> Interpolation<'a> {
                 continue;
             }
 
-            light_fields.push((angle, light_field));
+            if !viewer_plane.is_above(light_field.position) {
+                match right_light_field {
+                    Some((current_angle, _)) => {
+                        if angle > current_angle {
+                            right_light_field = Some((angle, light_field));
+                        }
+                    }
+                    None => right_light_field = Some((angle, light_field)),
+                }
+            } else {
+                match left_light_field {
+                    Some((current_angle, _)) => {
+                        if angle > current_angle {
+                            left_light_field = Some((angle, light_field));
+                        }
+                    }
+                    None => left_light_field = Some((angle, light_field)),
+                }
+            }
+
+            println!();
         }
 
-        light_fields.sort_by(|(left_angle, _), (right_angle, _)| {
-            left_angle
-                .partial_cmp(right_angle)
-                .expect("failed comparing floats")
-        });
-
-        if light_fields.is_empty() {
-            light_fields
-        } else if light_fields.len() == 1 {
-            light_fields
-                .iter()
-                .map(|(_, light_field)| (1.0, *light_field))
-                .collect()
-        } else {
-            Self::select_and_weight(&light_fields)
+        match (left_light_field, right_light_field) {
+            (Some((left_angle, left_light_field)), Some((right_angle, right_light_field))) => {
+                Self::weight_light_fields(
+                    left_angle,
+                    right_angle,
+                    left_light_field,
+                    right_light_field,
+                )
+            }
+            (Some((_, light_field)), None) => vec![(1.0, light_field)],
+            (None, Some((_, light_field))) => vec![(1.0, light_field)],
+            (None, None) => Vec::new(),
         }
     }
 
     #[inline]
-    fn select_and_weight<'c>(light_fields: &[(f32, &'c LightField)]) -> Vec<(f32, &'c LightField)> {
-        if light_fields.len() == 1 {
-            return light_fields
-                .iter()
-                .map(|(_, light_field)| (1.0, *light_field))
-                .collect();
-        }
-
-        let (first_angle, first_light_field) = light_fields[0];
-        let (second_angle, second_light_field) = light_fields[1];
-
+    fn weight_light_fields<'c>(
+        first_angle: f32,
+        second_angle: f32,
+        first_light_field: &'c LightField,
+        second_light_field: &'c LightField,
+    ) -> Vec<(f32, &'c LightField)> {
         let total = first_angle + second_angle;
 
         vec![
             (second_angle / total, first_light_field),
             (first_angle / total, second_light_field),
         ]
-    }
-
-    #[inline]
-    fn sort_by_angle<'c>(
-        light_fields: impl IntoIterator<Item = &'c LightField>,
-        direction: Vector3<f32>,
-    ) -> Vec<(f32, &'c LightField)> {
-        let mut fields = Vec::new();
-
-        for light_field in light_fields.into_iter() {
-            fields.push((direction.dot(light_field.direction), light_field));
-        }
-
-        fields.sort_by(|(left_angle, _), (right_angle, _)| {
-            left_angle
-                .partial_cmp(right_angle)
-                .expect("failed comparing floats")
-        });
-
-        fields
     }
 
     /// https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection#Algebraic_form
@@ -642,7 +642,7 @@ impl<'a> Interpolation<'a> {
                 Some((above_index, above_center, above_ratio)),
                 Some((below_index, below_center, below_ratio)),
             ) => {
-                assert!(above_center.y < below_center.y);
+                assert!(above_center.y <= below_center.y);
 
                 let weight = below_center.y - barycentric.y;
 
@@ -680,7 +680,7 @@ impl<'a> Interpolation<'a> {
                 Some((left_index, left_center, left_ratio)),
                 Some((right_index, right_center, right_ratio)),
             ) => {
-                assert!(left_center.x < right_center.x);
+                assert!(left_center.x <= right_center.x);
 
                 let weight = right_center.x - barycentric.x;
 

@@ -1,5 +1,7 @@
 use context::prelude::*;
 
+use cgmath::{Array, Vector3};
+
 use super::{extrinsic::Extrinsic, intrinsic::Intrinsic, meta::Meta};
 
 const META_TAG: &str = "meta";
@@ -40,5 +42,13 @@ impl Config {
             intrinsics,
             extrinsics,
         })
+    }
+
+    #[inline]
+    pub fn swap_axis(mut v: Vector3<f32>) -> Vector3<f32> {
+        v.swap_elements(1, 2);
+        v.z = -v.z;
+
+        v
     }
 }
