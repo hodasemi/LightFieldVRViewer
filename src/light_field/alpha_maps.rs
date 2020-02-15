@@ -10,7 +10,7 @@ use pxm::PFM;
 pub struct AlphaMap {
     data: Vec<Vec<bool>>,
 
-    depth: Vec<f32>,
+    depth: f32,
 }
 
 impl AlphaMap {
@@ -18,7 +18,7 @@ impl AlphaMap {
         AlphaMap {
             data: vec![vec![false; height as usize]; width as usize],
 
-            depth: Vec::new(),
+            depth: std::f32::MAX,
         }
     }
 
@@ -35,8 +35,8 @@ impl AlphaMap {
         }
     }
 
-    pub fn depth_values(&self) -> &Vec<f32> {
-        &self.depth
+    pub fn depth_values(&self) -> f32 {
+        self.depth
     }
 }
 
@@ -57,11 +57,12 @@ impl AlphaMaps {
             let (x, y) = Self::to_xy(depth_pfm.height, index);
 
             for (layer_index, alpha_map) in alpha_maps.iter_mut().enumerate() {
-                if *depth >= (minimal_depth + layer_index as f32 * threshold)
-                    && *depth < (minimal_depth + (layer_index as f32 + 1.0) * threshold)
-                {
+                let threshold_start = minimal_depth + layer_index as f32 * threshold;
+                let threshold_end = minimal_depth + (layer_index as f32 + 1.0) * threshold;
+
+                if *depth >= threshold_start && *depth < threshold_end {
                     alpha_map.data[x][y] = true;
-                    alpha_map.depth.push(*depth);
+                    alpha_map.depth = *depth;
                 }
             }
         }

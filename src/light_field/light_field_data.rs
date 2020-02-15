@@ -112,7 +112,7 @@ pub struct PlaneImageRatios {
 struct PlaneImage {
     image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     frustum: (usize, usize),
-    depth_values: Vec<f32>,
+    depth: f32,
 }
 
 struct QuantizedPlane {
@@ -125,7 +125,7 @@ impl LightFieldData {
         context: &Arc<Context>,
         frustums: Vec<CameraFrustum>,
         image_data: Vec<(
-            Vec<(ImageBuffer<Rgba<u8>, Vec<u8>>, usize, Vec<f32>)>,
+            Vec<(ImageBuffer<Rgba<u8>, Vec<u8>>, usize, f32)>,
             usize,
             usize,
         )>,
@@ -144,12 +144,12 @@ impl LightFieldData {
         let mut quantized_planes: Vec<QuantizedPlane> = Vec::new();
 
         for (images, x, y) in image_data.into_iter() {
-            for (image, layer_index, depth_values) in images.into_iter() {
+            for (image, layer_index, depth) in images.into_iter() {
                 // create plane image
                 let plane_image = PlaneImage {
                     image,
                     frustum: (x, y),
-                    depth_values,
+                    depth,
                 };
 
                 // search for layer index
@@ -190,7 +190,7 @@ impl LightFieldData {
             let mut total_count = 0;
 
             for image in quantized_plane.images.iter() {
-                total_depth += image.depth_values[image.depth_values.len() / 2];
+                total_depth += image.depth;
                 total_count += 1;
             }
 
