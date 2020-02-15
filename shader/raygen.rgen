@@ -15,7 +15,8 @@ struct RayPayload {
     float factor;
 };
 
-const int MAX_ITERATION = 50;
+layout (constant_id = 0) const int MAX_ITERATION = 50;
+layout (constant_id = 1) const float RAY_OFFSET = 0.0;
 
 layout(location = 0) rayPayloadNV RayPayload pay_load;
 
@@ -118,7 +119,7 @@ void main() {
         }
 
         // calculate new origin
-        origin.xyz = origin.xyz + direction.xyz * (pay_load.distance + 0.001);
+        origin.xyz = origin.xyz + direction.xyz * (pay_load.distance + RAY_OFFSET);
     }
 
     // blend background as last layer
