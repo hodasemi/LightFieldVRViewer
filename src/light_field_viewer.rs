@@ -108,7 +108,21 @@ impl LightFieldViewer {
                     ShaderType::RayGeneration,
                 )?,
                 None,
-                None,
+                Some(SpecializationConstants::new(
+                    Box::new((50 as i32, 0.00000001 as f32)),
+                    &[
+                        VkSpecializationMapEntry {
+                            constantID: 0,
+                            offset: 0,
+                            size: 4,
+                        },
+                        VkSpecializationMapEntry {
+                            constantID: 1,
+                            offset: 4,
+                            size: 4,
+                        },
+                    ],
+                )),
             )
             .add_shader(
                 ShaderModule::from_slice(

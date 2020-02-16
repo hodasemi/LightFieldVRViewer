@@ -450,8 +450,6 @@ impl<'a> Interpolation<'a> {
                     None => left_light_field = Some((angle, light_field)),
                 }
             }
-
-            println!();
         }
 
         match (left_light_field, right_light_field) {

@@ -16,7 +16,7 @@ struct RayPayload {
 };
 
 layout (constant_id = 0) const int MAX_ITERATION = 50;
-layout (constant_id = 1) const float RAY_OFFSET = 0.0;
+layout (constant_id = 1) const float RAY_OFFSET = 0.00000001;
 
 layout(location = 0) rayPayloadNV RayPayload pay_load;
 
@@ -50,7 +50,7 @@ void main() {
     int hit_shader_index = 1;
     int miss_shader_index = 1;
     int sbt_record_stride = 0;
-    float tmin = 0.001;
+    float tmin = RAY_OFFSET;
     float tmax = 10000.0;
 
     vec4 source_color = imageLoad(output_image, ivec2(gl_LaunchIDNV.xy));
@@ -119,7 +119,7 @@ void main() {
         }
 
         // calculate new origin
-        origin.xyz = origin.xyz + direction.xyz * (pay_load.distance + RAY_OFFSET);
+        origin.xyz = origin.xyz + direction.xyz * pay_load.distance;
     }
 
     // blend background as last layer
