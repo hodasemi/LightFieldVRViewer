@@ -15,8 +15,8 @@ struct RayPayload {
     float factor;
 };
 
-layout (constant_id = 0) const int MAX_ITERATION = 50;
-layout (constant_id = 1) const float RAY_OFFSET = 0.00000001;
+layout (constant_id = 0) const int MAX_ITERATION = 20;
+layout (constant_id = 1) const float RAY_OFFSET = 0.000001;
 
 layout(location = 0) rayPayloadNV RayPayload pay_load;
 

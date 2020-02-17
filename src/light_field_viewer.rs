@@ -100,6 +100,10 @@ impl LightFieldViewer {
             .add_descriptor_set_layout(&output_image_desc_layout)
             .build(device.clone())?;
 
+        let mut specialization = SpecializationConstants::new();
+        specialization.add(50 as i32, 0);
+        specialization.add(0.000001 as f32, 1);
+
         let (pipeline, sbt) = Pipeline::new_ray_tracing()
             .add_shader(
                 ShaderModule::from_slice(
@@ -108,21 +112,7 @@ impl LightFieldViewer {
                     ShaderType::RayGeneration,
                 )?,
                 None,
-                Some(SpecializationConstants::new(
-                    Box::new((50 as i32, 0.00000001 as f32)),
-                    &[
-                        VkSpecializationMapEntry {
-                            constantID: 0,
-                            offset: 0,
-                            size: 4,
-                        },
-                        VkSpecializationMapEntry {
-                            constantID: 1,
-                            offset: 4,
-                            size: 4,
-                        },
-                    ],
-                )),
+                Some(specialization),
             )
             .add_shader(
                 ShaderModule::from_slice(
