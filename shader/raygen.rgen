@@ -102,6 +102,7 @@ void main() {
         );
 
         // break if we haven't hit anything
+        // only, when miss shader is invoked
         if (pay_load.distance < 0.0) {
             break;
         }
