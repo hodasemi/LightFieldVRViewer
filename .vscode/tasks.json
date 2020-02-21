@@ -13,7 +13,12 @@
             "linux": {
                 "problemMatcher": [
                     "$rustc"
-                ]
+                ],
+                "options": {
+                    "env": {
+                        "MANGOHUD": "1"
+                    }
+                }
             },
             "dependsOn": [
                 "Build shader"
@@ -29,7 +34,12 @@
             "linux": {
                 "problemMatcher": [
                     "$rustc"
-                ]
+                ],
+                "options": {
+                    "env": {
+                        "MANGOHUD": "1"
+                    }
+                }
             },
             "dependsOn": [
                 "Build shader"
