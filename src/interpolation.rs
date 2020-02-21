@@ -81,6 +81,7 @@ impl Plane {
 
             let blas = AccelerationStructure::bottom_level()
                 .add_vertices(&gpu_buffer, None)
+                .set_flags(VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV)
                 .build(command_buffer.device().clone())?;
 
             blas.generate(command_buffer)?;
@@ -535,6 +536,7 @@ impl<'a> Interpolation<'a> {
         vec2(x, y)
     }
 
+    /// https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line#A_vector_projection_proof
     fn distance_to_line(
         reference: Vector3<f32>,
         normal: Vector3<f32>,
