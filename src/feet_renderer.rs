@@ -33,7 +33,7 @@ impl FeetRenderer {
         enable_feet: bool,
         enable_frustum: bool,
     ) -> VerboseResult<Self> {
-        let feet_image = Image::from_file("feet.png")?
+        let feet_image = Image::from_slice(include_bytes!("../feet.png"))?
             .nearest_sampler()
             .build(context.device(), context.queue())?;
 
