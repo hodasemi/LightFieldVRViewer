@@ -84,25 +84,17 @@ void set_pay_load(vec4 color) {
     pay_load.distance = gl_HitTNV;
 }
 
-vec4 linear(
-    float factor,
-    vec4 first_color,
-    vec4 second_color
-) {
-    return factor * first_color + (1.0 - factor) * second_color;
-}
-
 vec4 bilinear(
-    vec2 bary,
     vec4 top_left_color,
     vec4 top_right_color,
     vec4 bottom_left_color,
-    vec4 bottom_right_color
+    vec4 bottom_right_color,
+    vec2 bary
 ) {
-    vec4 left = linear(bary.y, top_left_color, bottom_left_color);
-    vec4 right = linear(bary.y, top_right_color, bottom_right_color);
+    vec4 left = mix(top_left_color, bottom_left_color, bary.y);
+    vec4 right = mix(top_right_color, bottom_right_color, bary.y);
 
-    return linear(bary.x, left, right);
+    return mix(left, right, bary.x);
 }
 
 void interpolate_images(PlaneInfo plane, vec2 hit_bary) {
@@ -116,14 +108,14 @@ void interpolate_images(PlaneInfo plane, vec2 hit_bary) {
         vec4 first = single_image(plane.indices[0], hit_bary, plane.bounds[0]);
         vec4 second = single_image(plane.indices[1], hit_bary, plane.bounds[1]);
 
-        color = linear(plane.bary.x, first, second);
+        color = mix(first, second, plane.bary.x);
     } else {
         vec4 first = single_image(plane.indices[0], hit_bary, plane.bounds[0]);
         vec4 second = single_image(plane.indices[1], hit_bary, plane.bounds[1]);
         vec4 third = single_image(plane.indices[2], hit_bary, plane.bounds[2]);
         vec4 fourth = single_image(plane.indices[3], hit_bary, plane.bounds[3]);
 
-        color = bilinear(plane.bary.xy, first, second, third, fourth);
+        color = bilinear(first, second, third, fourth, plane.bary.xy);
     }
 
     set_pay_load(color);
