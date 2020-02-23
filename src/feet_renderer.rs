@@ -34,7 +34,7 @@ impl FeetRenderer {
         enable_frustum: bool,
     ) -> VerboseResult<Self> {
         let feet_image = Image::from_slice(include_bytes!("../feet.png"))?
-            .nearest_sampler()
+            .attach_sampler(Sampler::nearest_sampler().build(context.device())?)
             .build(context.device(), context.queue())?;
 
         let descriptor_layout = DescriptorSetLayout::builder()

@@ -245,7 +245,7 @@ impl LightFieldData {
 
                 let vk_image = Image::from_raw(image.image.into_raw(), width, height)
                     .format(VK_FORMAT_R8G8B8A8_UNORM)
-                    .nearest_sampler()
+                    .attach_sampler(Sampler::nearest_sampler().build(context.device())?)
                     .build(context.device(), context.queue())?;
 
                 image_locations.push((vk_image, ratios, vec2(center_x, center_y)));
