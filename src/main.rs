@@ -19,7 +19,12 @@ use std::thread;
 fn main() -> VerboseResult<()> {
     let viewer_config = VrViewerConfig::load("settings.conf")?;
 
-    let context = create_context(viewer_config.force_desktop, viewer_config.enable_vsync)?;
+    let context = create_context(
+        viewer_config.force_desktop,
+        viewer_config.enable_vsync,
+        viewer_config.window_width,
+        viewer_config.window_height,
+    )?;
 
     let number_of_slices = viewer_config.number_of_slices;
 
@@ -82,9 +87,14 @@ fn main() -> VerboseResult<()> {
     Ok(())
 }
 
-fn create_context(force_desktop: bool, enable_vsync: bool) -> VerboseResult<Arc<Context>> {
+fn create_context(
+    force_desktop: bool,
+    enable_vsync: bool,
+    width: u32,
+    height: u32,
+) -> VerboseResult<Arc<Context>> {
     if force_desktop {
-        create_desktop_context(enable_vsync)
+        create_desktop_context(enable_vsync, width, height)
     } else {
         match create_vr_context() {
             Ok(context) => Ok(context),
@@ -92,7 +102,7 @@ fn create_context(force_desktop: bool, enable_vsync: bool) -> VerboseResult<Arc<
                 println!("{:?}", msg);
                 println!("failed creating VR Context");
 
-                create_desktop_context(enable_vsync)
+                create_desktop_context(enable_vsync, width, height)
             }
         }
     }
@@ -116,7 +126,11 @@ fn create_vr_context() -> VerboseResult<Arc<Context>> {
         .build()
 }
 
-fn create_desktop_context(enable_vsync: bool) -> VerboseResult<Arc<Context>> {
+fn create_desktop_context(
+    enable_vsync: bool,
+    width: u32,
+    height: u32,
+) -> VerboseResult<Arc<Context>> {
     let context_builder = Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
             debugging: false,
@@ -127,8 +141,8 @@ fn create_desktop_context(enable_vsync: bool) -> VerboseResult<Arc<Context>> {
         })
         .set_window_info(WindowCreateInfo {
             title: "Light Field Desktop Viewer".to_string(),
-            width: 1280,
-            height: 720,
+            width,
+            height,
             fullscreen: false,
             requested_display: None,
         })
@@ -153,6 +167,8 @@ const ENABLE_FEET: &str = "enable_feet";
 const ENABLE_FRUSTUM: &str = "enable_frustum";
 const FORCE_DESKTOP: &str = "force";
 const NUMBER_OF_SLICES: &str = "slice_count";
+const WINDOW_WIDTH: &str = "width";
+const WINDOW_HEIGHT: &str = "height";
 
 struct VrViewerConfig {
     // in meter per second
@@ -163,6 +179,9 @@ struct VrViewerConfig {
 
     // only in desktop mode
     enable_vsync: bool,
+
+    window_width: u32,
+    window_height: u32,
 
     light_fields: Vec<String>,
     number_of_slices: usize,
@@ -192,6 +211,14 @@ impl VrViewerConfig {
 
             if let Some(value) = info.get(FORCE_DESKTOP) {
                 config.force_desktop = value.to_value()?;
+            }
+
+            if let Some(value) = info.get(WINDOW_WIDTH) {
+                config.window_width = value.to_value()?;
+            }
+
+            if let Some(value) = info.get(WINDOW_HEIGHT) {
+                config.window_height = value.to_value()?;
             }
         }
 
@@ -228,6 +255,8 @@ impl Default for VrViewerConfig {
             enable_frustum: true,
             enable_feet: true,
             force_desktop: false,
+            window_width: 1280,
+            window_height: 720,
         }
     }
 }
