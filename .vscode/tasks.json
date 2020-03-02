@@ -5,7 +5,7 @@
     "tasks": [
         {
             "type": "shell",
-            "label": "Run Release",
+            "label": "Run Release (with MangoHud)",
             "command": "cargo run --release",
             "presentation": {
                 "clear": true
@@ -19,6 +19,22 @@
                         "MANGOHUD": "1"
                     }
                 }
+            },
+            "dependsOn": [
+                "Build shader"
+            ]
+        },
+        {
+            "type": "shell",
+            "label": "Run Release",
+            "command": "cargo run --release",
+            "presentation": {
+                "clear": true
+            },
+            "linux": {
+                "problemMatcher": [
+                    "$rustc"
+                ],
             },
             "dependsOn": [
                 "Build shader"

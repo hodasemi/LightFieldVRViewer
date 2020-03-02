@@ -67,6 +67,7 @@ fn main() -> VerboseResult<()> {
         viewer_config.movement_speed,
         viewer_config.enable_feet,
         viewer_config.enable_frustum,
+        number_of_slices,
     ) {
         Ok(viewer) => viewer,
         Err(err) => {

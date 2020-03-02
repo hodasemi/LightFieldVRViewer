@@ -59,6 +59,7 @@ impl LightFieldViewer {
         movement_speed: f32,
         enable_feet: bool,
         enable_frustum: bool,
+        number_of_slices: usize,
     ) -> VerboseResult<Arc<Self>> {
         let feet_renderer = FeetRenderer::new(context, &light_fields, enable_feet, enable_frustum)?;
 
@@ -101,7 +102,7 @@ impl LightFieldViewer {
             .build(device.clone())?;
 
         let mut specialization = SpecializationConstants::new();
-        specialization.add(50 as i32, 0);
+        specialization.add(number_of_slices as i32 * 2, 0);
         specialization.add(0.000001 as f32, 1);
 
         let (pipeline, sbt) = Pipeline::new_ray_tracing()
