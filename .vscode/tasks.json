@@ -16,7 +16,8 @@
                 ],
                 "options": {
                     "env": {
-                        "MANGOHUD": "1"
+                        "MANGOHUD": "1",
+                        "MANGOHUD_OUTPUT": "perf",
                     }
                 }
             },
