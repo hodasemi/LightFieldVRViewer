@@ -1,11 +1,14 @@
 use context::prelude::*;
 
-use cgmath::{vec3, Deg, Matrix3, Matrix4, Point3, Rad, Vector3};
+use cgmath::{vec3, Angle, Deg, Matrix3, Matrix4, Point3, Rad, Vector3};
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::light_field_viewer::{DEFAULT_FORWARD, UP};
+use crate::{
+    config::Config,
+    light_field_viewer::{DEFAULT_FORWARD, UP},
+};
 
 pub struct ViewEmulator {
     context: Arc<Context>,
@@ -38,8 +41,29 @@ impl ViewEmulator {
     ) -> Self {
         let angle = Deg(0.0);
 
-        let position = Point3::new(0.0, 1.6, 0.0);
-        let direction = Self::direction(angle);
+        // let position = Point3::new(0.0, 1.6, 0.0);
+        // let direction = Self::direction(angle);
+
+        let deviation: Deg<f32> = Deg(5.0);
+        let distance = 1.4;
+
+        let position = Point3::new(
+            distance * Deg::cos(deviation),
+            1.7,
+            if deviation >= Deg(0.0) {
+                -distance * Deg::sin(deviation)
+            } else {
+                distance * Deg::sin(deviation)
+            },
+        );
+
+        println!("Deviation: {:?}, Position: {:?}", deviation, position);
+
+        let direction = Config::swap_axis(
+            (EulerRotation::new(Deg(55.0), Deg(0.0), Deg(90.0) + deviation).as_matrix()
+                * DEFAULT_FORWARD.extend(0.0))
+            .xyz(),
+        );
 
         let simulation_transform = VRTransformations {
             proj: perspective(
@@ -196,5 +220,28 @@ impl ViewEmulator {
     #[inline]
     fn direction(angle: impl Into<Rad<f32>>) -> Vector3<f32> {
         Matrix3::from_axis_angle(UP, angle) * DEFAULT_FORWARD
+    }
+}
+
+struct EulerRotation {
+    x: Deg<f32>,
+    y: Deg<f32>,
+    z: Deg<f32>,
+}
+
+impl EulerRotation {
+    fn new(x: impl Into<Deg<f32>>, y: impl Into<Deg<f32>>, z: impl Into<Deg<f32>>) -> Self {
+        EulerRotation {
+            x: x.into(),
+            y: y.into(),
+            z: z.into(),
+        }
+    }
+
+    fn as_matrix(&self) -> Matrix4<f32> {
+        // https://www.mauriciopoppe.com/notes/computer-graphics/transformation-matrices/rotation/euler-angles/
+        Matrix4::from_angle_z(self.z)
+            * Matrix4::from_angle_y(self.y)
+            * Matrix4::from_angle_x(self.x)
     }
 }
