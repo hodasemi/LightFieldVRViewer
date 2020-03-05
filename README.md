@@ -15,4 +15,4 @@
 * `W`, `A`, `S`, `D` to navigate
 * `Q`, `E` for rotation
 * `Space`, `Ctrl` for up and down
-* combine `Shift` with all, to move at a forth of the speed
+* combine `Shift` with all, to move at a fourth of the speed
