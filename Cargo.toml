@@ -10,3 +10,5 @@ edition = "2018"
 context = { git = "https://github.com/hodasemi/Context.git", features = ["openvr"] }
 pxm = "0.1.0"
 ordered-float = "1.0"
+# https://github.com/rust-lang-nursery/failure/issues/342
+quote = "=1.0.2"
