@@ -411,44 +411,45 @@ impl<'a> Interpolation<'a> {
 
         let viewer_plane = FrustumPlane::new(position, UP, direction);
 
-        let mut proj_direction = direction;
-        proj_direction.y = 0.0;
-        proj_direction = proj_direction.normalize();
+        let project_on_xz = |mut direction: Vector3<f32>| {
+            direction.y = 0.0;
+            direction.normalize()
+        };
+
+        let proj_direction = project_on_xz(direction);
 
         for light_field in self.light_fields.iter() {
             // skip if not inside frustum
-            if !light_field.frustum.check(position) {
-                continue;
-            }
+            // if !light_field.frustum.check(position) {
+            //     continue;
+            // }
 
-            let mut proj_light_field_direction = light_field.direction;
-            proj_light_field_direction.y = 0.0;
-            proj_light_field_direction = proj_light_field_direction.normalize();
+            let proj_light_field_direction = project_on_xz(light_field.direction);
 
-            let angle = proj_direction.dot(proj_light_field_direction);
+            let angle_to_plane = proj_direction.dot(proj_light_field_direction);
 
-            // skip if back side
-            if angle < 0.0 {
+            // skip if light field is facing towards the viewer
+            if angle_to_plane < 0.0 {
                 continue;
             }
 
             if !viewer_plane.is_above(light_field.position) {
                 match right_light_field {
                     Some((current_angle, _)) => {
-                        if angle > current_angle {
-                            right_light_field = Some((angle, light_field));
+                        if angle_to_plane > current_angle {
+                            right_light_field = Some((angle_to_plane, light_field));
                         }
                     }
-                    None => right_light_field = Some((angle, light_field)),
+                    None => right_light_field = Some((angle_to_plane, light_field)),
                 }
             } else {
                 match left_light_field {
                     Some((current_angle, _)) => {
-                        if angle > current_angle {
-                            left_light_field = Some((angle, light_field));
+                        if angle_to_plane > current_angle {
+                            left_light_field = Some((angle_to_plane, light_field));
                         }
                     }
-                    None => left_light_field = Some((angle, light_field)),
+                    None => left_light_field = Some((angle_to_plane, light_field)),
                 }
             }
         }
