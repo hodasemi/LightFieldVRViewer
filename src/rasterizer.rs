@@ -3,18 +3,21 @@ use context::prelude::*;
 
 use std::sync::Arc;
 
+/// Vertex structure used as input type for feet pass
 #[derive(Debug, Clone)]
 pub struct TexturedVertex {
     pub position: Vector3<f32>,
     pub uv: Vector2<f32>,
 }
 
+/// Vertex structure used as input type for outline pass
 #[derive(Debug, Clone)]
 pub struct ColoredVertex {
     pub position: Vector3<f32>,
     pub color: Vector4<f32>,
 }
 
+/// Keeps track of pipelines and render passes
 pub struct Rasterizer {
     triangle_pipelines: TargetMode<Arc<Pipeline>>,
     line_pipelines: TargetMode<Arc<Pipeline>>,
@@ -22,6 +25,11 @@ pub struct Rasterizer {
 }
 
 impl Rasterizer {
+    /// Creates `Rasterizer`
+    ///
+    /// # Arguments
+    ///
+    /// * `context` Context handle
     pub fn new(context: &Arc<Context>) -> VerboseResult<Self> {
         let render_targets = Self::create_render_targets(context)?;
         let triangle_pipelines = Self::create_triangle_pipelines(context, &render_targets)?;
@@ -34,14 +42,17 @@ impl Rasterizer {
         })
     }
 
+    /// Returns pipeline, used by feet
     pub fn triangle_pipelines(&self) -> &TargetMode<Arc<Pipeline>> {
         &self.triangle_pipelines
     }
 
+    /// Returns pipeline, used by outlines
     pub fn line_pipelines(&self) -> &TargetMode<Arc<Pipeline>> {
         &self.line_pipelines
     }
 
+    /// Returns `RenderTarget`, wrapper type for RenderPass and Framebuffer
     pub fn render_targets(&self) -> &TargetMode<RenderTarget> {
         &self.render_targets
     }

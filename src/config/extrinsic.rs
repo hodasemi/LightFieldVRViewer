@@ -4,18 +4,40 @@ use cgmath::{vec3, Matrix4, Rad, Vector3, Zero};
 
 use std::collections::HashMap;
 
+#[doc(hidden)]
 const CAMERA_X_COUNT: &str = "num_cams_x";
+
+#[doc(hidden)]
 const CAMERA_Y_COUNT: &str = "num_cams_y";
+
+#[doc(hidden)]
 const BASELINE: &str = "baseline_mm";
+
+#[doc(hidden)]
 const FOCUS_DISTANCE: &str = "focus_distance_m";
+
+#[doc(hidden)]
 const CAMERA_CENTER_X: &str = "center_cam_x_m";
+
+#[doc(hidden)]
 const CAMERA_CENTER_Y: &str = "center_cam_y_m";
+
+#[doc(hidden)]
 const CAMERA_CENTER_Z: &str = "center_cam_z_m";
+
+#[doc(hidden)]
 const CAMERA_RX: &str = "center_cam_rx_rad";
+
+#[doc(hidden)]
 const CAMERA_RY: &str = "center_cam_ry_rad";
+
+#[doc(hidden)]
 const CAMERA_RZ: &str = "center_cam_rz_rad";
+
+#[doc(hidden)]
 const OFFSET: &str = "offset";
 
+/// Rust equivalent to the extrinsic part
 #[derive(Debug, PartialEq)]
 pub struct Extrinsic {
     pub horizontal_camera_count: u32,
@@ -30,13 +52,14 @@ pub struct Extrinsic {
     /// in meters
     pub camera_center: Vector3<f32>,
 
-    /// in radians
+    /// in radians, as euler angles
     pub camera_rotation: Vector3<Rad<f32>>,
 
     pub offset: f32,
 }
 
 impl Extrinsic {
+    #[doc(hidden)]
     pub fn load(data: &HashMap<String, Value>) -> VerboseResult<Self> {
         let mut config = Self::default();
 
@@ -94,6 +117,7 @@ impl Extrinsic {
         Ok(config)
     }
 
+    /// Converts the rotation that is given in euler angles into a matrix
     pub fn camera_rotation_matrix(&self) -> Matrix4<f32> {
         // https://www.mauriciopoppe.com/notes/computer-graphics/transformation-matrices/rotation/euler-angles/
         Matrix4::from_angle_z(self.camera_rotation.z)
@@ -101,7 +125,7 @@ impl Extrinsic {
             * Matrix4::from_angle_x(self.camera_rotation.x)
     }
 
-    // baseline in meters
+    /// Baseline in meters
     pub fn baseline(&self) -> f32 {
         self.baseline * 0.001
     }

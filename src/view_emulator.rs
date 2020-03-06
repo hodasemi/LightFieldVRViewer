@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use crate::light_field_viewer::{DEFAULT_FORWARD, UP};
 
+/// Emulates a user with position and rotation
 pub struct ViewEmulator {
     context: Arc<Context>,
 
@@ -31,6 +32,13 @@ pub struct ViewEmulator {
 }
 
 impl ViewEmulator {
+    /// Creates a `ViewEmulator`
+    ///
+    /// # Arguments
+    ///
+    /// * `context` Context handle
+    /// * `turn_speed` defines how fast the user can rotate
+    /// * `movement_speed` defines how fast the user can move
     pub fn new(
         context: &Arc<Context>,
         turn_speed: impl Into<Deg<f32>>,
@@ -73,6 +81,7 @@ impl ViewEmulator {
         }
     }
 
+    /// Updates the users position and rotation, based on the current internal state
     pub fn update(&mut self) -> VerboseResult<()> {
         let time_diff = self.context.time() - self.last_time;
         self.last_time = self.context.time();
@@ -132,6 +141,11 @@ impl ViewEmulator {
         Ok(())
     }
 
+    /// Processes key down event
+    ///
+    /// # Argument
+    ///
+    /// * `key` key that should be processed
     pub fn on_key_down(&mut self, key: Keycode) {
         match key {
             Keycode::A => self.x_dir -= 1,
@@ -147,6 +161,11 @@ impl ViewEmulator {
         }
     }
 
+    /// Processes key up event
+    ///
+    /// # Argument
+    ///
+    /// * `key` key that should be processed
     pub fn on_key_up(&mut self, key: Keycode) {
         match key {
             Keycode::A => self.x_dir += 1,
@@ -162,6 +181,7 @@ impl ViewEmulator {
         }
     }
 
+    /// Processes resize event
     pub fn on_resize(&mut self) {
         self.simulation_transform.proj = perspective(
             45.0,
@@ -171,6 +191,7 @@ impl ViewEmulator {
         );
     }
 
+    /// Exposes transformation matrices equivalent to VR backends
     pub fn simulation_transform(&self) -> VRTransformations {
         self.simulation_transform
     }

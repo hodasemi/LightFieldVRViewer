@@ -31,6 +31,7 @@ struct DepthInfo {
     max: f32,
 }
 
+/// Intermediate light field representation
 pub struct LightField {
     pub config: Config,
 
@@ -43,6 +44,13 @@ pub struct LightField {
 }
 
 impl LightField {
+    /// Loads a light field
+    ///
+    /// # Arguments
+    ///
+    /// * `context` Context handle
+    /// * `dir` Directory of the light field
+    /// * `number_of_slices` Slice count in which the light field will be cut
     pub fn new(context: &Arc<Context>, dir: &str, number_of_slices: usize) -> VerboseResult<Self> {
         println!("started loading light field {}", dir);
 

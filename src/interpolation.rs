@@ -9,6 +9,7 @@ use std::iter::IntoIterator;
 use std::ops::IndexMut;
 use std::sync::{Arc, Mutex};
 
+/// Efficient light field representation
 pub struct LightField {
     pub frustum: LightFieldFrustum,
     pub direction: Vector3<f32>,
@@ -47,6 +48,7 @@ impl LightField {
     }
 }
 
+/// Efficient plane representation
 pub struct Plane {
     pub info: PlaneInfo,
     pub image_infos: Vec<PlaneImageInfo>,
@@ -99,6 +101,7 @@ impl Plane {
     }
 }
 
+/// Container for CPU based blending preparation
 pub struct CPUInterpolation {
     light_fields: Vec<LightField>,
 
@@ -201,6 +204,7 @@ impl CPUInterpolation {
     }
 }
 
+/// Temporary per eye (if VR) interpolation
 pub struct Interpolation<'a> {
     pub light_fields: &'a [LightField],
     last_position: &'a Mutex<Vector3<f32>>,

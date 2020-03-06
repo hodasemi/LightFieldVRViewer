@@ -21,6 +21,8 @@ use super::{
 pub const DEFAULT_FORWARD: Vector3<f32> = vec3(0.0, 0.0, -1.0);
 pub const UP: Vector3<f32> = vec3(0.0, 1.0, 0.0);
 
+/// Heart of the application
+/// Keeps all light field data and main Vulkan buffers and images
 pub struct LightFieldViewer {
     context: Arc<Context>,
 
@@ -52,6 +54,17 @@ pub struct LightFieldViewer {
 }
 
 impl LightFieldViewer {
+    /// Creates the `LightFieldViewer`
+    ///
+    /// # Arguments
+    ///
+    /// * `context` Context Handle
+    /// * `light_fields` intermediate presentations of all light fields
+    /// * `turn_speed` Rotation speed for the desktop application
+    /// * `movement_speed` Movement speed for the desktop application
+    /// * `enable_feet` Enables rendering of feet
+    /// * `enable_frustum` Enables rendering of outlines
+    /// * `number_of_slices` Amount of slices a light is cut into
     pub fn new(
         context: &Arc<Context>,
         light_fields: Vec<LightField>,

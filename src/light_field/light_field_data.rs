@@ -121,6 +121,16 @@ struct QuantizedPlane {
 }
 
 impl LightFieldData {
+    /// Performs the conversion of per image sorted MPI to light field MPI with images
+    ///
+    /// # Arguments
+    ///
+    /// * `context` Context handle
+    /// * `frustums` Frustums of all cameras
+    /// * `image_data` MPI images with depth and camera index
+    /// * `frustum_extent` Dimensions of the light field
+    /// * `baseline` Camera baseline
+    /// * `max_depth` Upper bound, defines which MPI layers get clipped
     pub fn new(
         context: &Arc<Context>,
         frustums: Vec<CameraFrustum>,

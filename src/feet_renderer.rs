@@ -11,6 +11,7 @@ use super::{
     rasterizer::{ColoredVertex, Rasterizer, TexturedVertex},
 };
 
+/// Wrapper for vertex buffers of feet and outlines
 pub struct FeetRenderer {
     rasterizer: RwLock<Rasterizer>,
 
@@ -27,6 +28,14 @@ pub struct FeetRenderer {
 }
 
 impl FeetRenderer {
+    /// Creates `FeetRenderer`
+    ///
+    /// # Arguments
+    ///
+    /// `context` Context handle
+    /// `light fields` slice of the loaded light fields
+    /// `enable_feet` enables drawing of feet
+    /// `enable_frustum` enables drawing of outlines
     pub fn new(
         context: &Arc<Context>,
         light_fields: &[LightField],
@@ -185,6 +194,16 @@ impl FeetRenderer {
         })
     }
 
+    /// Renders feet and outlines based on internal state
+    ///
+    /// # Arguments
+    ///
+    /// * `command_buffer` CommandBuffer in which the draw calls are recorded
+    /// * `triangle_pipeline` Pipeline used to draw feet
+    /// * `line_pipeline` Pipeline used to draw outlines
+    /// * `render_target` RenderTarget handle
+    /// * `index` in which Framebuffer the feet and outlines going to be drawn
+    /// * `transform` view and projection matrices
     pub fn render(
         &self,
         command_buffer: &Arc<CommandBuffer>,
@@ -220,10 +239,12 @@ impl FeetRenderer {
         Ok(())
     }
 
+    /// Returns locked `Rasterizer`
     pub fn rasterizer(&self) -> VerboseResult<RwLockReadGuard<'_, Rasterizer>> {
         Ok(self.rasterizer.read()?)
     }
 
+    /// Processes resize event
     pub fn on_resize(&self, context: &Arc<Context>) -> VerboseResult<()> {
         *self.rasterizer.write()? = Rasterizer::new(context)?;
 

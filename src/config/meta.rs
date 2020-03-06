@@ -2,19 +2,43 @@ use context::prelude::*;
 
 use std::collections::HashMap;
 
+#[doc(hidden)]
 const SCENE: &str = "scene";
+
+#[doc(hidden)]
 const CATEGORY: &str = "category";
+
+#[doc(hidden)]
 const DATE: &str = "date";
+
+#[doc(hidden)]
 const VERSION: &str = "version";
+
+#[doc(hidden)]
 const AUTHORS: &str = "authors";
+
+#[doc(hidden)]
 const CONTACT: &str = "contact";
+
+#[doc(hidden)]
 const CYCLES_SEED: &str = "cycles_seed";
+
+#[doc(hidden)]
 const DISP_MIN: &str = "disp_min";
+
+#[doc(hidden)]
 const DISP_MAX: &str = "disp_max";
+
+#[doc(hidden)]
 const FRUSTUM_DISP_MIN: &str = "frustum_disp_min";
+
+#[doc(hidden)]
 const FRUSTUM_DISP_MAX: &str = "frustum_disp_max";
+
+#[doc(hidden)]
 const DEPTH_MAP_SCALE: &str = "depth_map_scale";
 
+/// Rust equivalent to the meta part
 #[derive(Debug, PartialEq)]
 pub struct Meta {
     pub scene_name: String,
@@ -32,6 +56,7 @@ pub struct Meta {
 }
 
 impl Meta {
+    #[doc(hidden)]
     pub fn load(data: &HashMap<String, Value>) -> VerboseResult<Self> {
         let author_string: String = data.get(AUTHORS).ok_or("no authors present")?.to_value()?;
 

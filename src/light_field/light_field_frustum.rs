@@ -19,6 +19,7 @@ impl Line {
     }
 }
 
+/// Frustum without near and far planes
 #[derive(Debug, Clone)]
 pub struct CameraFrustum {
     position: (usize, usize),
@@ -35,7 +36,7 @@ unsafe impl Sync for CameraFrustum {}
 unsafe impl Send for CameraFrustum {}
 
 impl CameraFrustum {
-    /// `direction`, `up`, `right` need to be normalized
+    /// `direction`, `up`, `right` must be normalized
     pub fn create_frustums(
         center: Vector3<f32>,
         direction: Vector3<f32>,

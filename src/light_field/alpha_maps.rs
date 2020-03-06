@@ -6,6 +6,7 @@ use std::slice::Iter;
 
 use pxm::PFM;
 
+/// Minimal presentation of a single MPI layer
 #[derive(Debug, Clone)]
 pub struct AlphaMap {
     data: Vec<Vec<bool>>,
@@ -40,11 +41,20 @@ impl AlphaMap {
     }
 }
 
+/// MPI container of an image
 pub struct AlphaMaps {
     maps: Vec<AlphaMap>,
 }
 
 impl AlphaMaps {
+    /// Creates an MPI for an image
+    ///
+    /// # Arguments
+    ///
+    /// * `depth_pfm` Depth map of the image
+    /// * `layer_count` Same as `number_of_slices`
+    /// * `minimal_depth` Precalculated starting depth
+    /// * `threshold` Depth range of a single layer
     pub fn new(
         depth_pfm: PFM,
         layer_count: usize,

@@ -1,13 +1,28 @@
 use cgmath::Deg;
 use context::prelude::*;
 
+/// Rust equivalent of the parameters of a light field
 pub mod config;
+
+/// Debug utilities, used in development phase
 pub mod debug;
+
+/// Feet and outline renderer
 pub mod feet_renderer;
+
+/// CPU side of per frame calculations
 pub mod interpolation;
+
+/// Intermediate struct of a light field
 pub mod light_field;
+
+/// Viewer, main struct that keeps everything together
 pub mod light_field_viewer;
+
+/// Rasterizer Vulkan handles for feet and outline rendering
 pub mod rasterizer;
+
+/// User emulator for desktop viewer
 pub mod view_emulator;
 
 use light_field::LightField;
@@ -16,6 +31,7 @@ use light_field_viewer::LightFieldViewer;
 use std::sync::Arc;
 use std::thread;
 
+/// `main` entry point of the program
 fn main() -> VerboseResult<()> {
     let viewer_config = VrViewerConfig::load("settings.conf")?;
 
@@ -88,6 +104,14 @@ fn main() -> VerboseResult<()> {
     Ok(())
 }
 
+/// Creates the context handle, based on input parameters
+///
+/// # Arguments
+///
+/// * `force_desktop` enables desktop backend
+/// * `enable_vsync` enables vsync
+/// * `width` width of the window if desktop backend is enabled
+/// * `height` height of the window if desktop backend is enabled
 fn create_context(
     force_desktop: bool,
     enable_vsync: bool,
@@ -109,6 +133,7 @@ fn create_context(
     }
 }
 
+/// Creates context handle with OpenVR backend
 fn create_vr_context() -> VerboseResult<Arc<Context>> {
     Context::new()
         .set_vulkan_debug_info(VulkanDebugInfo {
@@ -127,6 +152,7 @@ fn create_vr_context() -> VerboseResult<Arc<Context>> {
         .build()
 }
 
+/// Creates context handle with desktop window backend
 fn create_desktop_context(
     enable_vsync: bool,
     width: u32,
@@ -157,20 +183,43 @@ fn create_desktop_context(
     context_builder.build()
 }
 
+#[doc(hidden)]
 const DESKTOP_META: &str = "Desktop";
+
+#[doc(hidden)]
 const INFO_META: &str = "Info";
 
+#[doc(hidden)]
 const MOVEMENT_SPEED: &str = "movement_speed";
+
+#[doc(hidden)]
 const ROTATION_SPEED: &str = "rotation_speed";
+
+#[doc(hidden)]
 const VSYNC: &str = "enable_vsync";
+
+#[doc(hidden)]
 const LIGHT_FIELDS: &str = "light_fields";
+
+#[doc(hidden)]
 const ENABLE_FEET: &str = "enable_feet";
+
+#[doc(hidden)]
 const ENABLE_FRUSTUM: &str = "enable_frustum";
+
+#[doc(hidden)]
 const FORCE_DESKTOP: &str = "force";
+
+#[doc(hidden)]
 const NUMBER_OF_SLICES: &str = "slice_count";
+
+#[doc(hidden)]
 const WINDOW_WIDTH: &str = "width";
+
+#[doc(hidden)]
 const WINDOW_HEIGHT: &str = "height";
 
+/// Config struct, equivalent to the parameters file
 struct VrViewerConfig {
     // in meter per second
     movement_speed: f32,
@@ -192,6 +241,11 @@ struct VrViewerConfig {
 }
 
 impl VrViewerConfig {
+    /// loads config file parameters into a `VrViewerConfig` struct
+    ///
+    /// # Parameters
+    ///
+    /// * `file` Path to the configuration file
     fn load(file: &str) -> VerboseResult<VrViewerConfig> {
         let mut config = VrViewerConfig::default();
 

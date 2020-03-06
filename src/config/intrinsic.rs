@@ -2,12 +2,22 @@ use context::prelude::*;
 
 use std::collections::HashMap;
 
+#[doc(hidden)]
 const FOCAL_LENGTH: &str = "focal_length_mm";
+
+#[doc(hidden)]
 const IMAGE_WIDTH: &str = "image_resolution_x_px";
+
+#[doc(hidden)]
 const IMAGE_HEIGHT: &str = "image_resolution_y_px";
+
+#[doc(hidden)]
 const SENSOR_SIZE: &str = "sensor_size_mm";
+
+#[doc(hidden)]
 const FSTOP: &str = "fstop";
 
+/// Rust equivalent to the intrinsic part
 #[derive(Debug, PartialEq)]
 pub struct Intrinsic {
     /// in millimeters
@@ -26,6 +36,7 @@ pub struct Intrinsic {
 }
 
 impl Intrinsic {
+    #[doc(hidden)]
     pub fn load(data: &HashMap<String, Value>) -> VerboseResult<Self> {
         Ok(Intrinsic {
             focal_length: data
@@ -52,17 +63,17 @@ impl Intrinsic {
         })
     }
 
-    // focal length in meter
+    /// Focal length in meter
     pub fn focal_length(&self) -> f32 {
         self.focal_length * 0.001
     }
 
-    // sensor size in meter
+    /// Sensor size in meter
     pub fn sensor_size(&self) -> f32 {
         self.sensor_size * 0.001
     }
 
-    // fstop in meter
+    /// fstop in meter
     #[allow(unused)]
     pub fn fstop(&self) -> f32 {
         self.fstop * 0.001

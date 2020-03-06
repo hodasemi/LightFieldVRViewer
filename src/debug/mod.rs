@@ -12,6 +12,7 @@ use std::sync::{
     Arc, Mutex,
 };
 
+/// Handler for rendering the correct image of a specific plane
 pub struct LayerDebugger {
     as_descriptor: Arc<DescriptorSet>,
 
@@ -27,6 +28,14 @@ pub struct LayerDebugger {
 }
 
 impl LayerDebugger {
+    /// Creates a `LayerDebugger`
+    ///
+    /// # Arguments
+    ///
+    /// * `context` Context handle
+    /// * `images` all images used by the light field
+    /// * `view_descriptor_layer` descriptor layout for view and projection matrix uniform buffer
+    /// * `output_image_descriptor_layout` descriptor layout for output image
     pub fn new(
         context: &Arc<Context>,
         images: &Vec<Arc<Image>>,
@@ -149,6 +158,11 @@ impl LayerDebugger {
         Ok(desc_set)
     }
 
+    /// Processes key input
+    ///
+    /// # Arguments
+    ///
+    /// * `key_code` Key that gets processed
     pub fn handle_input(&self, key_code: Keycode) {
         match key_code {
             Keycode::Plus => {
@@ -209,6 +223,7 @@ impl LayerDebugger {
         }
     }
 
+    /// Renders the current debug view
     pub fn render(
         &self,
         command_buffer: &Arc<CommandBuffer>,
